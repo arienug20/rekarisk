@@ -310,6 +310,54 @@ CP_CV_DEFAULTS = {
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# Two-Phase Flow Constants
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Lockhart-Martinelli C coefficient by flow regime
+# (liquid-gas) → C value
+LM_C_COEFFICIENTS = {
+    "turbulent_turbulent": 20.0,
+    "laminar_turbulent": 12.0,
+    "turbulent_laminar": 10.0,
+    "laminar_laminar": 5.0,
+}
+
+# Default API 520 overpressure percentages [%]
+API_520_OVERPRESSURE = {
+    "gas_vapor": 10.0,
+    "liquid": 10.0,
+    "fire_exposure": 21.0,
+    "steam": 10.0,
+    "two_phase": 10.0,
+}
+
+# API 520 discharge coefficient defaults
+API_520_KD_DEFAULT = {
+    "gas_vapor": 0.975,
+    "liquid": 0.65,
+    "steam": 0.975,
+}
+
+# Typical pipe absolute roughness [m]
+PIPE_ROUGHNESS = {
+    "drawn_tube": 0.0015e-3,
+    "commercial_steel": 0.0457e-3,
+    "asphalted_cast_iron": 0.122e-3,
+    "galvanized_iron": 0.152e-3,
+    "cast_iron": 0.259e-3,
+    "concrete": 0.3e-3,
+    "riveted_steel": 0.9e-3,
+    "corroded_steel": 2.0e-3,
+}
+
+# Pool spreading transition Reynolds number
+POOL_SPREAD_TRANSITION_RE = 1.0  # approximate
+
+# Minimum wind speed for evaporation [m/s]
+MIN_WIND_SPEED_EVAP = 0.5
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Pool Fire Constants
 # ══════════════════════════════════════════════════════════════════════════════
 

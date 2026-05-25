@@ -5,7 +5,33 @@ Provides the PyQt6-based desktop GUI with dock-based layout,
 project management, substance selection, and scenario editing.
 """
 
-from .main_window import MainWindow
-from .menu_bar import RekariskMenuBar
-from .project_panel import ProjectPanel
-from .substance_selector import SubstanceSelector
+try:
+    from .main_window import MainWindow
+except ImportError:
+    MainWindow = None
+
+try:
+    from .menu_bar import RekariskMenuBar
+except ImportError:
+    RekariskMenuBar = None
+    
+try:
+    from .project_panel import ProjectPanel
+except ImportError:
+    ProjectPanel = None
+    
+try:
+    from .substance_selector import SubstanceSelector
+except ImportError:
+    SubstanceSelector = None
+    
+try:
+    from .source_term_panel import SourceTermPanel
+except ImportError:
+    SourceTermPanel = None
+    
+try:
+    from .source_term_results import SourceTermResultsPanel, SourceTermResultsDock
+except ImportError:
+    SourceTermResultsPanel = None
+    SourceTermResultsDock = None
