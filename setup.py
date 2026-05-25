@@ -1,0 +1,53 @@
+from setuptools import setup, find_packages
+
+setup(
+    name="rekarisk",
+    version="0.1.0.dev0",
+    description="Consequence & Risk Analysis for Safety Engineers",
+    long_description=open("README.md").read(),
+    long_description_content_type="text/markdown",
+    author="Arie Nugraha",
+    author_email="arienug2000@gmail.com",
+    url="https://github.com/arienug20/rekarisk",
+    packages=find_packages(where="src", include=["rekarisk", "rekarisk.*"]),
+    package_dir={"": "src"},
+    python_requires=">=3.11",
+    install_requires=[
+        "numpy>=1.26.0",
+        "scipy>=1.11.0",
+        "matplotlib>=3.8.0",
+        "cartopy>=0.22.0",
+        "PyQt6>=6.6.0",
+        "shapely>=2.0.0",
+        "fiona>=1.9.0",
+        "pyproj>=3.6.0",
+        "reportlab>=4.0.0",
+        "openpyxl>=3.1.0",
+        "jsonschema>=4.20.0",
+        "platformdirs>=4.0.0",
+    ],
+    extras_require={
+        "dev": ["pytest", "pytest-cov", "ruff", "mypy"],
+        "3d": ["pyvista>=0.43.0"],
+        "eos": ["CoolProp>=6.6.0"],
+        "kml": ["simplekml>=1.3.0"],
+        "all": ["rekarisk[dev,3d,eos,kml]"],
+    },
+    entry_points={
+        "gui_scripts": [
+            "rekarisk=rekarisk.ui.main:main",
+        ],
+    },
+    classifiers=[
+        "Development Status :: 2 - Pre-Alpha",
+        "Intended Audience :: Science/Research",
+        "Intended Audience :: Manufacturing",
+        "License :: OSI Approved :: MIT License",
+        "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
+        "Topic :: Scientific/Engineering",
+        "Topic :: Scientific/Engineering :: Atmospheric Science",
+        "Topic :: Scientific/Engineering :: Chemistry",
+        "Topic :: Scientific/Engineering :: Physics",
+    ],
+)

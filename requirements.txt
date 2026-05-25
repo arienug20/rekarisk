@@ -1,0 +1,41 @@
+# Rekarisk — Consequence & Risk Analysis Software
+# Requirements
+
+# === Core ===
+numpy>=1.26.0,<2.0.0
+scipy>=1.11.0
+matplotlib>=3.8.0
+cartopy>=0.22.0
+
+# === GUI ===
+PyQt6>=6.6.0
+# or: PySide6>=6.6.0
+
+# === GIS & Terrain ===
+shapely>=2.0.0
+fiona>=1.9.0
+pyproj>=3.6.0
+rasterio>=1.3.0
+
+# === 3D Visualization ===
+pyvista>=0.43.0
+# mayavi>=4.8.0  # optional
+
+# === Reports ===
+reportlab>=4.0.0
+openpyxl>=3.1.0
+
+# === Utilities ===
+jsonschema>=4.20.0  # project file validation
+platformdirs>=4.0.0  # cross-platform data dirs
+packaging>=23.0  # version parsing
+
+# === Optional but Recommended ===
+# CoolProp>=6.6.0  # EoS library (or use built-in PR/SRK)
+# simplekml>=1.3.0  # KML export
+
+# === Dev & Test ===
+pytest>=8.0.0
+pytest-cov>=4.1.0
+ruff>=0.3.0
+mypy>=1.8.0

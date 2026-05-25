@@ -1,0 +1,5 @@
+{
+  "topics": {},
+  "mappings": {},
+  "_description": "Help system topic index. Each UI panel maps to a help topic via F1. Populated during development."
+}
