@@ -115,6 +115,8 @@ class VesselResult:
         t_final: Time when P_target was reached (or t_max) [s].
         events: Dict of event times.
         messages: Info/warning strings.
+        Z: Optional Z-factor array (dynamic EOS diagnostics).
+        k: Optional k array (dynamic EOS diagnostics).
     """
     t: np.ndarray
     P: np.ndarray
@@ -127,6 +129,46 @@ class VesselResult:
     t_final: float = 0.0
     events: dict = field(default_factory=dict)
     messages: list = field(default_factory=list)
+    Z: np.ndarray | None = None
+    k: np.ndarray | None = None
+
+    def plot(
+        self,
+        save_path: str | None = None,
+        vessel_name: str = "",
+        orifice_mm: float = 0.0,
+        format: str = "png",
+    ):
+        """Generate a comprehensive blowdown plot.
+
+        Args:
+            save_path: File path (auto-generates to outputs/ if None).
+            vessel_name: Label for plot title.
+            orifice_mm: Orifice diameter in mm.
+            format: Image format (png, pdf, svg).
+
+        Returns:
+            matplotlib Figure.
+        """
+        from .plotting import plot_blowdown_summary
+
+        has_diag = self.Z is not None and self.k is not None
+        Z_arr = self.Z if has_diag else None
+        k_arr = self.k if has_diag else None
+
+        return plot_blowdown_summary(
+            t=self.t,
+            P=self.P,
+            T=self.T,
+            m=self.m,
+            mdot=self.mdot,
+            Z=Z_arr,
+            k=k_arr,
+            vessel_name=vessel_name,
+            orifice_mm=orifice_mm,
+            save_path=save_path,
+            format=format,
+        )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -657,6 +699,8 @@ def _solve_api521_blowdown(inputs: VesselInput) -> dict:
         "events": events,
         "phase_quality": None,
         "messages": messages,
+        "Z": Z_arr,
+        "k": k_arr,
     }
 
 
@@ -902,4 +946,6 @@ def calculate_vessel_blowdown(inputs: VesselInput) -> VesselResult:
         t_final=data["t_final"],
         events=data.get("events", {}),
         messages=data.get("messages", []),
+        Z=data.get("Z"),
+        k=data.get("k"),
     )
