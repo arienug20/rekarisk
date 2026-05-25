@@ -14,8 +14,10 @@ References:
 
 from __future__ import annotations
 
+import csv
 import math
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Callable, Optional
 
 import numpy as np
@@ -168,6 +170,181 @@ class VesselResult:
             orifice_mm=orifice_mm,
             save_path=save_path,
             format=format,
+        )
+
+    def to_csv(
+        self,
+        path: str | None = None,
+        delimiter: str = ",",
+        units: str = "si",
+    ) -> str:
+        """Export time-series results to CSV.
+
+        Args:
+            path: File path to save (returns CSV string if None).
+            delimiter: Column delimiter (default comma).
+            units: 'si' (Pa, K, kg, kg/s) or 'us' (psia, °F, lb, lb/hr).
+
+        Returns:
+            CSV string if path is None.
+        """
+        import csv
+        import io
+
+        # Unit conversions
+        if units == "us":
+            PSI = PSI2PA
+            T_conv = lambda k: (k - 273.15) * 9 / 5 + 32
+            m_conv = lambda kg: kg * 2.2046226
+            mdot_conv = lambda kgs: kgs * 3600 * 2.2046226
+            headers = ["time_min", "P_psia", "T_F", "m_lb", "mdot_lb_hr"]
+            if self.Z is not None:
+                headers += ["Z", "k"]
+        else:
+            PSI = 1.0
+            T_conv = lambda k: k
+            m_conv = lambda kg: kg
+            mdot_conv = lambda kgs: kgs
+            headers = ["time_s", "P_Pa", "T_K", "m_kg", "mdot_kg_s"]
+            if self.Z is not None:
+                headers += ["Z", "k"]
+
+        # Build rows
+        n = len(self.t)
+        output = io.StringIO()
+        writer = csv.writer(output, delimiter=delimiter)
+
+        # Header with metadata
+        writer.writerow([f"# Rekarisk Blowdown Simulation"])
+        writer.writerow([f"# t_final={self.t_final:.2f}s",
+                         f"dm={self.total_mass_released:.4f}kg"])
+        writer.writerow([])
+        writer.writerow(headers)
+
+        for i in range(n):
+            row = [
+                f"{self.t[i]/60:.3f}" if units == "us" else f"{self.t[i]:.3f}",
+                f"{self.P[i]/PSI:.4f}",
+                f"{T_conv(self.T[i]):.4f}",
+                f"{m_conv(self.m[i]):.4f}",
+                f"{mdot_conv(self.mdot[i]):.4f}",
+            ]
+            if self.Z is not None:
+                row.append(f"{self.Z[i]:.6f}")
+                row.append(f"{self.k[i]:.6f}")
+            writer.writerow(row)
+
+        csv_text = output.getvalue()
+
+        if path:
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            Path(path).write_text(csv_text)
+            print(f"  📄 CSV saved: {path}")
+
+        return csv_text
+
+    def export(
+        self,
+        dir_path: str,
+        basename: str = "blowdown",
+        vessel_name: str = "",
+        orifice_mm: float = 0.0,
+        formats: tuple = ("png", "csv"),
+    ) -> dict[str, str]:
+        """Export both plot and CSV in one call.
+
+        Args:
+            dir_path: Output directory path.
+            basename: Base filename (without extension).
+            vessel_name: Vessel label for plot title.
+            orifice_mm: Orifice diameter in mm.
+            formats: Tuple of export formats ("png", "pdf", "svg", "csv").
+
+        Returns:
+            Dict mapping format → saved file path.
+        """
+        from pathlib import Path
+        Path(dir_path).mkdir(parents=True, exist_ok=True)
+
+        saved = {}
+
+        for fmt in formats:
+            if fmt == "csv":
+                path = f"{dir_path}/{basename}.csv"
+                self.to_csv(path=path)
+                saved["csv"] = path
+            elif fmt in ("png", "pdf", "svg"):
+                path = f"{dir_path}/{basename}.{fmt}"
+                self.plot(save_path=path, vessel_name=vessel_name,
+                          orifice_mm=orifice_mm, format=fmt)
+                saved[fmt] = path
+
+        return saved
+
+    @staticmethod
+    def from_csv(path: str) -> "VesselResult":
+        """Load VesselResult from a previously exported CSV file.
+
+        Args:
+            path: Path to CSV file.
+
+        Returns:
+            VesselResult with reconstructed arrays.
+        """
+        import csv
+
+        with open(path, "r") as fh:
+            reader = csv.reader(fh)
+            rows = list(reader)
+
+        # Find header row (skip comments starting with #)
+        data_start = 0
+        headers = []
+        for i, row in enumerate(rows):
+            if row and not row[0].startswith("#"):
+                headers = [h.strip() for h in row]
+                data_start = i + 1
+                break
+
+        t_vals, P_vals, T_vals, m_vals, mdot_vals = [], [], [], [], []
+        Z_vals, k_vals = [], []
+        has_Z = "Z" in headers
+
+        for row in rows[data_start:]:
+            if not row or row[0].startswith("#"):
+                continue
+            t_vals.append(float(row[0]))
+            P_vals.append(float(row[1]))
+            T_vals.append(float(row[2]))
+            m_vals.append(float(row[3]))
+            mdot_vals.append(float(row[4]))
+            if has_Z and len(row) > 5:
+                Z_vals.append(float(row[5]))
+            if has_Z and len(row) > 6:
+                k_vals.append(float(row[6]))
+
+        # Detect units: if time column is < 30 for final entry → minutes (US units)
+        t = np.array(t_vals, dtype=float)
+        if t[-1] < 30 and t[0] < 1:
+            # Convert US → SI
+            t *= 60.0  # min → s
+            P = np.array(P_vals, dtype=float) * PSI2PA  # psia → Pa
+            T = (np.array(T_vals, dtype=float) - 32) * 5 / 9 + 273.15  # °F → K
+            m = np.array(m_vals, dtype=float) / 2.2046226  # lb → kg
+            mdot = np.array(mdot_vals, dtype=float) / 3600 / 2.2046226  # lb/hr → kg/s
+        else:
+            P = np.array(P_vals, dtype=float)
+            T = np.array(T_vals, dtype=float)
+            m = np.array(m_vals, dtype=float)
+            mdot = np.array(mdot_vals, dtype=float)
+
+        return VesselResult(
+            t=t, P=P, T=T, m=m, mdot=mdot,
+            m_remaining=m,
+            total_mass_released=float(m[0] - m[-1]) if len(m) > 0 else 0.0,
+            t_final=float(t[-1]) if len(t) > 0 else 0.0,
+            Z=np.array(Z_vals, dtype=float) if Z_vals else None,
+            k=np.array(k_vals, dtype=float) if k_vals else None,
         )
 
 
