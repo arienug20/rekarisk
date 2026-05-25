@@ -67,6 +67,8 @@ class Quantity:
         self._lookup: Dict[str, UnitDef] = {}
         for key, udef in units.items():
             self._lookup[key.lower()] = udef
+            self._lookup[udef.name.lower()] = udef
+            self._lookup[udef.symbol.lower()] = udef
             for alias in udef.aliases:
                 self._lookup[alias.lower()] = udef
 

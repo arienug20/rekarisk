@@ -333,7 +333,13 @@ class Substance:
     def liquid_density_at_T(self, T: float) -> float:
         """Liquid density at temperature T [K] → returns [kg/m³]."""
         if self.dippr_liquid_density is not None:
-            return self._eval_dippr(self.dippr_liquid_density, T)
+            params = self.dippr_liquid_density
+            eq_type = int(params[0])
+            molar_density = self._eval_dippr(params, T)  # [kmol/m³] from DIPPR
+            if eq_type in (DIPPRParam.EQ_105, DIPPRParam.EQ_106):
+                # DIPPR 105/106 return molar density [kmol/m³]; convert to [kg/m³]
+                return molar_density * self.molecular_weight
+            return molar_density
         if self.liquid_density is not None:
             return self.liquid_density
         raise ValueError(f"Liquid density not available for {self.name}")
@@ -341,8 +347,9 @@ class Substance:
     def heat_capacity_liquid(self, T: float) -> float:
         """Liquid heat capacity at T [K] → returns [J/(kg·K)]."""
         if self.dippr_heat_capacity_liquid is not None:
-            cp_j_mol_k = self._eval_dippr(self.dippr_heat_capacity_liquid, T)
-            return cp_j_mol_k / (self.molecular_weight * 0.001)  # J/(mol·K) → J/(kg·K)
+            cp_j_kmol_k = self._eval_dippr(self.dippr_heat_capacity_liquid, T)
+            # DIPPR returns J/(kmol·K); MW is kg/kmol → J/(kg·K)
+            return cp_j_kmol_k / self.molecular_weight
         if self.specific_heat_liquid is not None:
             return self.specific_heat_liquid
         return 2000.0  # conservative default [J/(kg·K)]
@@ -350,8 +357,9 @@ class Substance:
     def heat_capacity_gas(self, T: float) -> float:
         """Ideal gas heat capacity at T [K] → returns [J/(kg·K)]."""
         if self.dippr_heat_capacity_gas is not None:
-            cp_j_mol_k = self._eval_dippr(self.dippr_heat_capacity_gas, T)
-            return cp_j_mol_k / (self.molecular_weight * 0.001)
+            cp_j_kmol_k = self._eval_dippr(self.dippr_heat_capacity_gas, T)
+            # DIPPR returns J/(kmol·K); MW is kg/kmol → J/(kg·K)
+            return cp_j_kmol_k / self.molecular_weight
         if self.specific_heat_vapor is not None:
             return self.specific_heat_vapor
         return 1000.0  # conservative default
@@ -476,14 +484,19 @@ class Substance:
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize to dictionary (for JSON export)."""
+        import dataclasses
         result = {}
         for f in fields(self):
             val = getattr(self, f.name)
             if val is None and f.default is None:
                 continue
-            if hasattr(f, "default_factory") and f.default_factory is not None:
-                if val == f.default_factory():
-                    continue
+            if (f.default_factory is not dataclasses.MISSING
+                    and f.default_factory is not None):
+                try:
+                    if val == f.default_factory():
+                        continue
+                except TypeError:
+                    pass
             result[f.name] = val
         return result
 
