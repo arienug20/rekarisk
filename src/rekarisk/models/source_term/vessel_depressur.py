@@ -61,6 +61,8 @@ class VesselInput:
         T_min: Minimum plausible temperature [K] (default 50 K = -370°F).
         mode: 'rigorous' (ODE) or 'api521' (simplified).
         n_time_steps: Number of output time points (default 100).
+        mole_fractions: Dict[str, float] for CoolProp mixture (dynamic Z/k).
+        dynamic_props: If True, compute Z and k dynamically via CoolProp PR EOS.
     """
     V: float
     A_wall: float
@@ -77,7 +79,7 @@ class VesselInput:
     rho_liquid: float | None = None
     molecular_weight: float = 0.0289647  # air [kg/mol]
     cp_cv_ratio: float = 1.4
-    Z: float = 1.0  # compressibility factor
+    Z: float = 1.0  # compressibility factor (initial, overridden if dynamic_props=True)
     cv: float | None = None
     cp: float | None = None
     heat_of_vaporization: float | None = None
@@ -91,6 +93,10 @@ class VesselInput:
     # Solver
     mode: str = "rigorous"  # 'rigorous' or 'api521'
     n_time_steps: int = 100
+
+    # Dynamic EOS (CoolProp Peng-Robinson)
+    mole_fractions: dict[str, float] | None = None
+    dynamic_props: bool = False
 
 
 @dataclass
@@ -177,6 +183,87 @@ def _gas_choked_mass_flux(P: float, T: float, k: float, MW: float, Z: float = 1.
     if term <= EPSILON:
         return 0.0
     return P * math.sqrt(term)
+
+
+def _dynamic_eos_properties(
+    mole_fracs: dict[str, float],
+    P: float,
+    T: float,
+    fallback_k: float = 1.4,
+    fallback_Z: float = 1.0,
+) -> tuple[float, float, str]:
+    """Compute Z and k dynamically via CoolProp HEOS (Helmholtz EOS).
+
+    Uses CoolProp.AbstractState with HEOS backend and PT_INPUTS.
+    HEOS uses set_mole_fractions() API (not REFPROP bracket syntax).
+    Includes robust error handling for low-temperature / phase-boundary edge cases.
+    Falls back gracefully if CoolProp is unavailable or HEOS fails.
+
+    Args:
+        mole_fracs: Dict of component name → mole fraction.
+        P: Pressure [Pa].
+        T: Temperature [K].
+        fallback_k: Default k if computation fails.
+        fallback_Z: Default Z if computation fails.
+
+    Returns:
+        Tuple of (Z, k, status_string).
+    """
+    try:
+        import CoolProp
+        from CoolProp.CoolProp import AbstractState
+
+        # Build HEOS mixture: "COMP1&COMP2&..." + set_mole_fractions
+        comp_names = []
+        fracs = []
+        for comp_name, frac in sorted(mole_fracs.items()):
+            if frac > 0:
+                comp_names.append(comp_name)
+                fracs.append(frac)
+
+        if len(comp_names) == 0:
+            return fallback_Z, fallback_k, "no components"
+
+        if len(comp_names) == 1:
+            AS = AbstractState("HEOS", comp_names[0])
+        else:
+            AS = AbstractState("HEOS", "&".join(comp_names))
+            AS.set_mole_fractions(fracs)
+
+        # Force gas phase to avoid rhomolar < 0 at low T
+        try:
+            AS.specify_phase(CoolProp.iphase_gas)
+        except Exception:
+            pass  # some pure fluids may not support this
+
+        AS.update(CoolProp.PT_INPUTS, P, T)
+
+        Z_val = float(AS.compressibility_factor())
+
+        # Validate — reject unphysical values
+        if not (0.01 < Z_val < 10.0):
+            return fallback_Z, fallback_k, "CoolProp: Z out of range"
+
+        cp_molar = float(AS.cpmolar())
+        cv_molar = float(AS.cvmolar())
+
+        if cv_molar <= 0:
+            return fallback_Z, fallback_k, "CoolProp: cv <= 0"
+
+        k_val = cp_molar / cv_molar
+        if not (1.001 < k_val < 5.0):
+            k_val = fallback_k
+
+        return Z_val, k_val, "CoolProp HEOS"
+
+    except ImportError:
+        return fallback_Z, fallback_k, "CoolProp unavailable"
+    except Exception as exc:
+        msg = str(exc)
+        if "rhomolar" in msg or "density" in msg.lower():
+            # EOS range violation — keep previous values
+            return fallback_Z, fallback_k, "CoolProp: density out of range"
+        return fallback_Z, fallback_k, f"CoolProp: {msg[:50]}"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -374,27 +461,25 @@ def _solve_gas_blowdown(inputs: VesselInput) -> dict:
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _solve_api521_blowdown(inputs: VesselInput) -> dict:
-    """Simplified blowdown using API 521 method with real-gas correction.
+    """Simplified blowdown using API 521 with dynamic real-gas correction.
 
     Physical model:
-      1. Mass balance:  dm/dt = -Cd·A_orifice·G_choked_or_subsonic(P,T)
-      2. Energy:  dU/dt = -mdot·h_out + U_htc·A_wall·(T_amb - T)
-      3. Isentropic core:  T/T0 = (P/P0)^((k-1)/k)  for ideal gas
-         OR P = (m·Z·R·T)/(V·MW) for real gas with Z-factor
+      1. Mass balance:  dm/dt = -Cd·A_orifice·G_choked_or_subsonic(P,T,Z,k)
+      2. Energy:  T_new from isentropic relation + wall heat transfer
+      3. Real gas P:  P = (m·Z·R·T)/(V·MW)
 
-    Uses explicit Euler integration with adaptive check for choking.
-    JT cooling captured via isentropic T relation.
-    Wall heat transfer slows cooling (realistic for industrial vessels).
+    If inputs.dynamic_props=True and mole_fractions provided:
+      Z and k are recomputed at every timestep via CoolProp PT flash.
 
     Args:
         inputs: VesselInput dataclass.
 
     Returns:
-        Dict with solution arrays.
+        Dict with solution arrays (includes Z_arr, k_arr for diagnostics).
     """
-    k = inputs.cp_cv_ratio
+    k_const = inputs.cp_cv_ratio
+    Z_const = inputs.Z
     MW = inputs.molecular_weight
-    Z_c = inputs.Z  # compressibility factor
     A_hole = _orifice_area(inputs.orifice_d)
     Cd = inputs.Cd
     V = inputs.V
@@ -402,36 +487,40 @@ def _solve_api521_blowdown(inputs: VesselInput) -> dict:
     T0 = inputs.T_initial
     P_target = inputs.P_target if inputs.P_target is not None else P_ATM
 
+    use_dynamic = inputs.dynamic_props and inputs.mole_fractions is not None
+
+    # ---- Initial Z and k (CoolProp or user-supplied) ----
+    eos_status = "constant"
+    if use_dynamic:
+        Z_c, k_c, eos_status = _dynamic_eos_properties(
+            inputs.mole_fractions, P0, T0, k_const, Z_const)
+    else:
+        Z_c, k_c = Z_const, k_const
+
+    # Initial mass
     m0 = _gas_mass(V, P0, T0, MW, Z_c)
 
-    # Adaptive time stepping: start with target number of steps but allow
-    # early termination when P_target is reached
+    # Time stepping
     n_steps = inputs.n_time_steps
     dt = inputs.t_max / n_steps
 
-    # Pre-allocate (will truncate later)
-    max_steps = n_steps * 5  # allow more steps if needed
+    max_steps = n_steps * 10
     t_list = [0.0]
     m_list = [m0]
     T_list = [T0]
     P_list = [P0]
     mdot_list = [0.0]
+    Z_list = [Z_c]
+    k_list = [k_c]
 
     m = m0
     T = T0
     P = P0
+
     t = 0.0
-
-    # Specific heat for ideal gas: cp - cv = Z·R/MW, cp/cv = k
-    R_specific = Z_c * R / MW
-    cv_specific = R_specific / (k - 1.0) if k > 1.001 else R_specific / 0.4
-    cp_specific = cv_specific * k
-
-    # Choking pressure ratio (constant for ideal gas)
-    r_crit = (2.0 / (k + 1.0)) ** (k / (k - 1.0))
-
     step_count = 0
     reached_target = False
+    cp_calls = 1
 
     while t < inputs.t_max and step_count < max_steps:
         step_count += 1
@@ -440,66 +529,71 @@ def _solve_api521_blowdown(inputs: VesselInput) -> dict:
             reached_target = True
             break
 
+        # ---- Choking pressure ratio ----
+        r_crit = (2.0 / (k_c + 1.0)) ** (k_c / (k_c - 1.0))
+
         # ---- Flow regime check ----
         P_choked_current = P * r_crit
         is_choked = P_target < P_choked_current
 
-        # ---- Mass flow rate at current conditions ----
+        # ---- Mass flux at current (Z,k) ----
         if is_choked:
-            G_flux = _gas_choked_mass_flux(P, T, k, MW, Z_c)
+            G_flux = _gas_choked_mass_flux(P, T, k_c, MW, Z_c)
         else:
-            # Subsonic flow — API 521 Eq. 26
             pr = max(P_target / P, EPSILON)
             if pr >= 1.0 - EPSILON:
                 G_flux = 0.0
             else:
-                ratio_term = pr ** (2.0 / k) - pr ** ((k + 1.0) / k)
+                ratio_term = pr ** (2.0 / k_c) - pr ** ((k_c + 1.0) / k_c)
                 if ratio_term <= EPSILON:
                     G_flux = 0.0
                 else:
-                    factor = (2.0 * k / (k - 1.0)) * (MW / (Z_c * R * T))
+                    factor = (2.0 * k_c / (k_c - 1.0)) * (MW / (Z_c * R * T))
                     G_flux = P * math.sqrt(max(factor * ratio_term, 0.0))
 
         mdot_i = Cd * A_hole * G_flux
 
-        # ---- Adaptive sub-stepping: limit mass loss to 5% per step ----
+        # ---- Adaptive sub-stepping ----
         max_dm_per_step = 0.05 * m
         max_dt = max_dm_per_step / max(mdot_i, EPSILON)
         dt_eff = min(dt, max_dt)
-        if dt_eff < dt * 0.01:
-            dt_eff = dt * 0.01
+        dt_eff = max(dt_eff, dt * 0.005)
 
-        # ---- Euler forward step (mass) ----
+        # ---- Mass step ----
         dm = -mdot_i * dt_eff
         m_new = m + dm
         if m_new <= EPSILON:
             m_new = EPSILON
 
-        # ---- Isentropic expansion with real-gas correction ----
-        # For constant-volume vessel with real gas (Z constant or nearly so):
-        # Ideal: P ∝ m^k  (via T ∝ m^(k-1), P ∝ m·T)
-        # Real:  P ∝ m·T  with T from isentropic relation
-        #
-        # Isentropic:  T/T0 = (P/P0)^((k-1)/k)  →  T/T0 = (m/m0)^(k-1)
-        # Real gas P:  P = m·Z·R·T / (V·MW)
-        T_isentropic = T0 * (m_new / m0) ** (k - 1.0) if m0 > EPSILON and m_new > EPSILON else T0
+        # ---- Specific heats ----
+        Z_R_MW = Z_c * R / MW
+        cv_specific = Z_R_MW / (k_c - 1.0) if k_c > 1.001 else Z_R_MW / 0.4
 
-        # ---- Heat transfer from vessel wall ----
-        Q_wall = 0.0
-        if inputs.U_htc > EPSILON and inputs.T_ambient > EPSILON:
+        # ---- Isentropic temperature ----
+        T_isentropic = T0 * (m_new / m0) ** (k_c - 1.0) if m0 > EPSILON and m_new > EPSILON else T0
+
+        # ---- Wall heat transfer ----
+        T_new = T_isentropic
+        if inputs.U_htc > EPSILON and inputs.T_ambient > EPSILON and m_new > EPSILON:
             Q_wall = inputs.U_htc * inputs.A_wall * (inputs.T_ambient - T)
-            # Heat addition raises temperature
-            dT_heat = Q_wall * dt_eff / (m_new * cv_specific) if m_new > EPSILON and cv_specific > EPSILON else 0.0
+            dT_heat = Q_wall * dt_eff / (m_new * cv_specific) if cv_specific > EPSILON else 0.0
             T_new = T_isentropic + dT_heat
-        else:
-            T_new = T_isentropic
 
-        # Clamp temperature to plausible minimum (no lower than T_min)
         T_new = max(T_new, inputs.T_min)
 
-        # ---- Update pressure (real gas law) ----
+        # ---- Pressure (real gas law) ----
         P_new = _gas_pressure(V, m_new, T_new, MW, Z_c)
         P_new = max(P_new, P_ATM)
+
+        # ---- Dynamic Z/k update from CoolProp PR EOS ----
+        if use_dynamic:
+            Z_new, k_new, eos_status = _dynamic_eos_properties(
+                inputs.mole_fractions, P_new, T_new, k_const, Z_const)
+            cp_calls += 1
+            # Recompute P with updated Z for consistency
+            P_new = max(_gas_pressure(V, m_new, T_new, MW, Z_new), P_ATM)
+            Z_c = Z_new
+            k_c = k_new
 
         # ---- Store state ----
         t += dt_eff
@@ -512,33 +606,44 @@ def _solve_api521_blowdown(inputs: VesselInput) -> dict:
         T_list.append(T)
         P_list.append(P)
         mdot_list.append(mdot_i)
+        Z_list.append(Z_c)
+        k_list.append(k_c)
 
-    # ---- Convert to numpy arrays ----
+    # ---- Arrays ----
     t_arr = np.array(t_list)
     m_arr = np.array(m_list)
     T_arr = np.array(T_list)
     P_arr = np.array(P_list)
     mdot_arr = np.array(mdot_list)
+    Z_arr = np.array(Z_list)
+    k_arr = np.array(k_list)
 
     total_released = m0 - m_arr[-1] if len(m_arr) > 0 else 0.0
-    t_final = t_arr[-1] if len(t_arr) > 0 else 0.0
+    t_final = float(t_arr[-1]) if len(t_arr) > 0 else 0.0
 
     events = {}
     if reached_target:
         events["target_reached"] = True
-        events["t_reached"] = float(t_final)
+        events["t_reached"] = t_final
+
+    dm_lb = total_released * 2.20462
+    m0_lb = m0 * 2.20462
 
     messages = [
-        f"API 521 isentropic expansion (k={k:.3f}, Z={Z_c:.3f})",
-        f"m0={m0*2.20462:.1f} lb, dm={total_released*2.20462:.1f} lb",
-        f"mdot_avg={total_released/max(t_final,1.0)*3600:.1f} kg/hr",
+        f"API 521 real-gas blowdown",
+        f"EOS: {eos_status}",
+        f"Z: {float(np.min(Z_arr)):.4f} → {float(np.max(Z_arr)):.4f} (avg {float(np.mean(Z_arr)):.3f})",
+        f"k: {float(np.min(k_arr)):.3f} → {float(np.max(k_arr)):.3f} (avg {float(np.mean(k_arr)):.3f})",
+        f"m0={m0_lb:.1f} lb, Δm={dm_lb:.1f} lb ({dm_lb/m0_lb*100:.0f}%)",
     ]
+    if use_dynamic:
+        messages.append(f"CoolProp calls: {cp_calls}")
     if inputs.U_htc > EPSILON:
-        messages.append(f"Wall heat transfer: U={inputs.U_htc:.0f} W/m²·K")
+        messages.append(f"Wall heat U={inputs.U_htc:.0f} W/m²·K")
     if reached_target:
-        messages.append(f"P_target={P_target/PSI2PA:.1f} psia reached at t={t_final:.1f}s")
+        messages.append(f"P_target reached at t={t_final:.1f}s ({t_final/60:.1f} min)")
     else:
-        messages.append(f"t_max={inputs.t_max:.0f}s reached, P_final={P_arr[-1]/PSI2PA:.1f} psia")
+        messages.append(f"t_max reached, P_final={P_arr[-1]/PSI2PA:.1f} psia")
 
     return {
         "t": t_arr,
@@ -548,7 +653,7 @@ def _solve_api521_blowdown(inputs: VesselInput) -> dict:
         "mdot": mdot_arr,
         "m_remaining": m_arr,
         "total_mass_released": float(total_released),
-        "t_final": float(t_final),
+        "t_final": t_final,
         "events": events,
         "phase_quality": None,
         "messages": messages,
