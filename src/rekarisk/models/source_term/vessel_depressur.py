@@ -22,6 +22,9 @@ import numpy as np
 
 from ...core.constants import R, P_ATM, G, EPSILON, T_0C
 
+# Conversion factor
+PSI2PA = 6894.757293168  # 1 psia in Pascals
+
 # Note: scipy.integrate.solve_ivp is imported at the function level
 # to avoid mandatory SciPy import on module load (only needed for rigorous mode).
 
@@ -48,12 +51,14 @@ class VesselInput:
         rho_liquid: Liquid density [kg/m³] (for two-phase).
         molecular_weight: Molecular weight [kg/mol].
         cp_cv_ratio: Specific heat ratio k = Cp/Cv [-].
+        Z: Real-gas compressibility factor [-] (default 1.0 = ideal gas).
         cv: Specific heat at constant volume [J/(kg·K)].
         cp: Specific heat at constant pressure [J/(kg·K)].
         heat_of_vaporization: Latent heat [J/kg] (for two-phase).
         T_boiling: Boiling point at P_initial [K] (for two-phase).
         U_htc: Wall heat transfer coefficient [W/(m²·K)] (default 0).
         T_ambient: Ambient temperature [K] for wall heat transfer.
+        T_min: Minimum plausible temperature [K] (default 50 K = -370°F).
         mode: 'rigorous' (ODE) or 'api521' (simplified).
         n_time_steps: Number of output time points (default 100).
     """
@@ -72,6 +77,7 @@ class VesselInput:
     rho_liquid: float | None = None
     molecular_weight: float = 0.0289647  # air [kg/mol]
     cp_cv_ratio: float = 1.4
+    Z: float = 1.0  # compressibility factor
     cv: float | None = None
     cp: float | None = None
     heat_of_vaporization: float | None = None
@@ -80,6 +86,7 @@ class VesselInput:
     # Heat transfer
     U_htc: float = 0.0
     T_ambient: float = 298.15
+    T_min: float = 50.0
 
     # Solver
     mode: str = "rigorous"  # 'rigorous' or 'api521'
@@ -125,44 +132,48 @@ def _orifice_area(d: float) -> float:
     return math.pi * (d / 2.0) ** 2
 
 
-def _gas_mass(V: float, P: float, T: float, MW: float) -> float:
-    """Ideal gas mass in vessel [kg].
+def _gas_mass(V: float, P: float, T: float, MW: float, Z: float = 1.0) -> float:
+    """Real gas mass in vessel [kg] using compressibility factor.
 
     Args:
         V: Volume [m³].
         P: Pressure [Pa].
         T: Temperature [K].
         MW: Molecular weight [kg/mol].
+        Z: Compressibility factor [-].
 
     Returns:
         Mass [kg].
     """
-    return (P * V * MW) / (R * T)
+    return (P * V * MW) / (Z * R * T)
 
 
-def _gas_pressure(V: float, m: float, T: float, MW: float) -> float:
-    """Pressure from ideal gas law [Pa]."""
+def _gas_pressure(V: float, m: float, T: float, MW: float, Z: float = 1.0) -> float:
+    """Pressure from real gas law [Pa]."""
     if V <= EPSILON:
         return 0.0
-    return (m * R * T) / (V * MW)
+    return (m * Z * R * T) / (V * MW)
 
 
-def _gas_choked_mass_flux(P: float, T: float, k: float, MW: float) -> float:
-    """Choked mass flux for ideal gas [kg/(m²·s)].
+def _gas_choked_mass_flux(P: float, T: float, k: float, MW: float, Z: float = 1.0) -> float:
+    """Choked mass flux for real gas [kg/(m²·s)].
+
+    API 521 Eq. 25: G = P * sqrt( k*MW/(Z*R*T) * (2/(k+1))^((k+1)/(k-1)) )
 
     Args:
         P: Upstream pressure [Pa].
         T: Upstream temperature [K].
         k: Cp/Cv.
         MW: Molecular weight [kg/mol].
+        Z: Compressibility factor [-].
 
     Returns:
         Mass flux [kg/(m²·s)].
     """
-    if P <= EPSILON or T <= EPSILON:
+    if P <= EPSILON or T <= EPSILON or Z <= EPSILON:
         return 0.0
     exponent = (k + 1.0) / (k - 1.0)
-    term = k * (MW / (R * T)) * (2.0 / (k + 1.0)) ** exponent
+    term = k * (MW / (Z * R * T)) * (2.0 / (k + 1.0)) ** exponent
     if term <= EPSILON:
         return 0.0
     return P * math.sqrt(term)
@@ -186,7 +197,7 @@ def _gas_blowdown_ode(t: float, y: np.ndarray, params: dict) -> np.ndarray:
     Args:
         t: Time [s] (not used — system is autonomous).
         y: State vector [m, U].
-        params: Dict with keys: V, k, MW, cv, orifice_d, Cd, A_wall, U_htc,
+        params: Dict with keys: V, k, MW, cv, Z, orifice_d, Cd, A_wall, U_htc,
                 T_amb, P_atm.
 
     Returns:
@@ -197,6 +208,7 @@ def _gas_blowdown_ode(t: float, y: np.ndarray, params: dict) -> np.ndarray:
     k = params["k"]
     MW = params["MW"]
     cv = params["cv"]
+    Z_c = params.get("Z", 1.0)
     A_hole = params["A_hole"]
     Cd = params["Cd"]
     A_wall = params["A_wall"]
@@ -209,7 +221,7 @@ def _gas_blowdown_ode(t: float, y: np.ndarray, params: dict) -> np.ndarray:
 
     # Current state
     T = U / (m * cv) if m > EPSILON and cv > EPSILON else params["T_initial"]
-    P = _gas_pressure(V, m, T, MW)
+    P = _gas_pressure(V, m, T, MW, Z_c)
 
     if P <= P_down + EPSILON:
         return np.array([0.0, 0.0])
@@ -221,14 +233,14 @@ def _gas_blowdown_ode(t: float, y: np.ndarray, params: dict) -> np.ndarray:
 
     # Mass flow rate
     if is_choked:
-        G_flux = _gas_choked_mass_flux(P, T, k, MW)
+        G_flux = _gas_choked_mass_flux(P, T, k, MW, Z_c)
     else:
         # Subsonic flow
         pr = P_down / P
         ratio_term = pr ** (2.0 / k) - pr ** ((k + 1.0) / k)
         if ratio_term <= EPSILON or pr <= EPSILON:
             return np.array([0.0, 0.0])
-        factor = (2.0 * k / (k - 1.0)) * (MW / (R * T))
+        factor = (2.0 * k / (k - 1.0)) * (MW / (Z_c * R * T))
         G_flux = P * math.sqrt(factor * ratio_term)
 
     mdot = Cd * A_hole * G_flux
@@ -263,19 +275,12 @@ def _solve_gas_blowdown(inputs: VesselInput) -> dict:
     except Exception:
         raise
 
-    # Compute cv and cp if not given
-    if inputs.cv is None:
-        # Estimate from k and MW: cp - cv = R/MW, cp/cv = k
-        R_specific = R / inputs.molecular_weight
-        inputs_cv = R_specific / (inputs.kwargs.get("k", inputs.cp_cv_ratio) - 1.0) \
-            if hasattr(inputs, "kwargs") else R_specific / (inputs.cp_cv_ratio - 1.0)
-    else:
-        inputs_cv = inputs.cv
-
-    cv_val = inputs.cv if inputs.cv is not None else R / inputs.molecular_weight / (inputs.cp_cv_ratio - 1.0)
+    # Compute cv from k and real-gas correction
+    R_specific = inputs.Z * R / inputs.molecular_weight
+    cv_val = inputs.cv if inputs.cv is not None else R_specific / (inputs.cp_cv_ratio - 1.0)
 
     # Initial conditions
-    m0 = _gas_mass(inputs.V, inputs.P_initial, inputs.T_initial, inputs.molecular_weight)
+    m0 = _gas_mass(inputs.V, inputs.P_initial, inputs.T_initial, inputs.molecular_weight, inputs.Z)
     U0 = m0 * cv_val * inputs.T_initial
 
     A_hole = _orifice_area(inputs.orifice_d)
@@ -286,6 +291,7 @@ def _solve_gas_blowdown(inputs: VesselInput) -> dict:
         "V": inputs.V,
         "k": inputs.cp_cv_ratio,
         "MW": inputs.molecular_weight,
+        "Z": inputs.Z,
         "cv": cv_val,
         "A_hole": A_hole,
         "Cd": inputs.Cd,
@@ -368,18 +374,17 @@ def _solve_gas_blowdown(inputs: VesselInput) -> dict:
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _solve_api521_blowdown(inputs: VesselInput) -> dict:
-    """Simplified blowdown using API 521 method.
+    """Simplified blowdown using API 521 method with real-gas correction.
 
-    Assumes isothermal or isentropic expansion and integrates analytically.
+    Physical model:
+      1. Mass balance:  dm/dt = -Cd·A_orifice·G_choked_or_subsonic(P,T)
+      2. Energy:  dU/dt = -mdot·h_out + U_htc·A_wall·(T_amb - T)
+      3. Isentropic core:  T/T0 = (P/P0)^((k-1)/k)  for ideal gas
+         OR P = (m·Z·R·T)/(V·MW) for real gas with Z-factor
 
-    For isentropic expansion of ideal gas through orifice:
-        dm/dt = -Cd * A * P * sqrt( k*MW/(R*T) * (2/(k+1))^((k+1)/(k-1)) )
-        P/P0 = (m/m0)^k  (isentropic, T/T0 = (m/m0)^(k-1))
-
-    Analytical solution for choked flow:
-        m(t) = m0 / (1 + α·t)^(1/(k-1))
-
-    where α = (k-1)·Cd·A·P0·sqrt(k·MW/(R·T0)·(2/(k+1))^((k+1)/(k-1))) / m0
+    Uses explicit Euler integration with adaptive check for choking.
+    JT cooling captured via isentropic T relation.
+    Wall heat transfer slows cooling (realistic for industrial vessels).
 
     Args:
         inputs: VesselInput dataclass.
@@ -389,6 +394,7 @@ def _solve_api521_blowdown(inputs: VesselInput) -> dict:
     """
     k = inputs.cp_cv_ratio
     MW = inputs.molecular_weight
+    Z_c = inputs.Z  # compressibility factor
     A_hole = _orifice_area(inputs.orifice_d)
     Cd = inputs.Cd
     V = inputs.V
@@ -396,80 +402,143 @@ def _solve_api521_blowdown(inputs: VesselInput) -> dict:
     T0 = inputs.T_initial
     P_target = inputs.P_target if inputs.P_target is not None else P_ATM
 
-    m0 = _gas_mass(V, P0, T0, MW)
+    m0 = _gas_mass(V, P0, T0, MW, Z_c)
 
-    # Initial choked mass flux
-    G0 = _gas_choked_mass_flux(P0, T0, k, MW)
-    mdot0 = Cd * A_hole * G0
-
-    # Mass remaining for choked flow
-    # m/m0 = (1 - (k-1)/k * mdot0/m0 * t) ^ (1/(k-1))  ... hmm, not exactly
-    # Let's use simple explicit Euler with reasonable time steps
-
+    # Adaptive time stepping: start with target number of steps but allow
+    # early termination when P_target is reached
     n_steps = inputs.n_time_steps
-    t_arr = np.linspace(0, inputs.t_max, n_steps)
-    dt = t_arr[1] - t_arr[0]
+    dt = inputs.t_max / n_steps
 
-    m_arr = np.zeros(n_steps)
-    T_arr = np.zeros(n_steps)
-    P_arr = np.zeros(n_steps)
-    mdot_arr = np.zeros(n_steps)
+    # Pre-allocate (will truncate later)
+    max_steps = n_steps * 5  # allow more steps if needed
+    t_list = [0.0]
+    m_list = [m0]
+    T_list = [T0]
+    P_list = [P0]
+    mdot_list = [0.0]
 
     m = m0
     T = T0
     P = P0
+    t = 0.0
 
-    for i in range(n_steps):
-        m_arr[i] = m
-        T_arr[i] = T
-        P_arr[i] = P
+    # Specific heat for ideal gas: cp - cv = Z·R/MW, cp/cv = k
+    R_specific = Z_c * R / MW
+    cv_specific = R_specific / (k - 1.0) if k > 1.001 else R_specific / 0.4
+    cp_specific = cv_specific * k
+
+    # Choking pressure ratio (constant for ideal gas)
+    r_crit = (2.0 / (k + 1.0)) ** (k / (k - 1.0))
+
+    step_count = 0
+    reached_target = False
+
+    while t < inputs.t_max and step_count < max_steps:
+        step_count += 1
 
         if P <= P_target + EPSILON or m <= EPSILON:
-            mdot_arr[i] = 0.0
-            continue
+            reached_target = True
+            break
 
-        # Check choking
-        r_crit = (2.0 / (k + 1.0)) ** (k / (k - 1.0))
-        P_choked = P * r_crit
-        is_choked = P_target < P_choked
+        # ---- Flow regime check ----
+        P_choked_current = P * r_crit
+        is_choked = P_target < P_choked_current
 
+        # ---- Mass flow rate at current conditions ----
         if is_choked:
-            G_flux = _gas_choked_mass_flux(P, T, k, MW)
-            mdot_i = Cd * A_hole * G_flux
+            G_flux = _gas_choked_mass_flux(P, T, k, MW, Z_c)
         else:
-            pr = P_target / P
-            ratio_term = pr ** (2.0 / k) - pr ** ((k + 1.0) / k)
-            if ratio_term <= EPSILON:
-                mdot_i = 0.0
+            # Subsonic flow — API 521 Eq. 26
+            pr = max(P_target / P, EPSILON)
+            if pr >= 1.0 - EPSILON:
+                G_flux = 0.0
             else:
-                factor = (2.0 * k / (k - 1.0)) * (MW / (R * T))
-                G_flux = P * math.sqrt(factor * ratio_term)
-                mdot_i = Cd * A_hole * G_flux
+                ratio_term = pr ** (2.0 / k) - pr ** ((k + 1.0) / k)
+                if ratio_term <= EPSILON:
+                    G_flux = 0.0
+                else:
+                    factor = (2.0 * k / (k - 1.0)) * (MW / (Z_c * R * T))
+                    G_flux = P * math.sqrt(max(factor * ratio_term, 0.0))
 
-        mdot_arr[i] = mdot_i
+        mdot_i = Cd * A_hole * G_flux
 
-        # Step forward
-        dm = -mdot_i * dt
+        # ---- Adaptive sub-stepping: limit mass loss to 5% per step ----
+        max_dm_per_step = 0.05 * m
+        max_dt = max_dm_per_step / max(mdot_i, EPSILON)
+        dt_eff = min(dt, max_dt)
+        if dt_eff < dt * 0.01:
+            dt_eff = dt * 0.01
+
+        # ---- Euler forward step (mass) ----
+        dm = -mdot_i * dt_eff
         m_new = m + dm
-        if m_new <= 0:
+        if m_new <= EPSILON:
             m_new = EPSILON
 
-        # Isentropic relations: T/T0 = (P/P0)^((k-1)/k) = (rho/rho0)^(k-1)
-        # For constant volume: P ∝ m·T, with T ∝ m^(k-1)
-        # → P ∝ m^k
-        P_new = P0 * (m_new / m0) ** k if m0 > EPSILON else 0.0
-        T_new = T0 * (m_new / m0) ** (k - 1.0) if m0 > EPSILON else 0.0
+        # ---- Isentropic expansion with real-gas correction ----
+        # For constant-volume vessel with real gas (Z constant or nearly so):
+        # Ideal: P ∝ m^k  (via T ∝ m^(k-1), P ∝ m·T)
+        # Real:  P ∝ m·T  with T from isentropic relation
+        #
+        # Isentropic:  T/T0 = (P/P0)^((k-1)/k)  →  T/T0 = (m/m0)^(k-1)
+        # Real gas P:  P = m·Z·R·T / (V·MW)
+        T_isentropic = T0 * (m_new / m0) ** (k - 1.0) if m0 > EPSILON and m_new > EPSILON else T0
 
+        # ---- Heat transfer from vessel wall ----
+        Q_wall = 0.0
+        if inputs.U_htc > EPSILON and inputs.T_ambient > EPSILON:
+            Q_wall = inputs.U_htc * inputs.A_wall * (inputs.T_ambient - T)
+            # Heat addition raises temperature
+            dT_heat = Q_wall * dt_eff / (m_new * cv_specific) if m_new > EPSILON and cv_specific > EPSILON else 0.0
+            T_new = T_isentropic + dT_heat
+        else:
+            T_new = T_isentropic
+
+        # Clamp temperature to plausible minimum (no lower than T_min)
+        T_new = max(T_new, inputs.T_min)
+
+        # ---- Update pressure (real gas law) ----
+        P_new = _gas_pressure(V, m_new, T_new, MW, Z_c)
+        P_new = max(P_new, P_ATM)
+
+        # ---- Store state ----
+        t += dt_eff
         m = m_new
-        T = max(T_new, inputs.T_ambient)
-        P = max(P_new, 0.0)
+        T = T_new
+        P = P_new
 
-    total_released = m0 - m_arr[-1]
-    t_final = t_arr[-1]
-    if P_arr[-1] <= P_target:
-        # Find when target reached
-        idx = np.argmax(P_arr <= P_target)
-        t_final = t_arr[idx] if idx > 0 else t_arr[-1]
+        t_list.append(t)
+        m_list.append(m)
+        T_list.append(T)
+        P_list.append(P)
+        mdot_list.append(mdot_i)
+
+    # ---- Convert to numpy arrays ----
+    t_arr = np.array(t_list)
+    m_arr = np.array(m_list)
+    T_arr = np.array(T_list)
+    P_arr = np.array(P_list)
+    mdot_arr = np.array(mdot_list)
+
+    total_released = m0 - m_arr[-1] if len(m_arr) > 0 else 0.0
+    t_final = t_arr[-1] if len(t_arr) > 0 else 0.0
+
+    events = {}
+    if reached_target:
+        events["target_reached"] = True
+        events["t_reached"] = float(t_final)
+
+    messages = [
+        f"API 521 isentropic expansion (k={k:.3f}, Z={Z_c:.3f})",
+        f"m0={m0*2.20462:.1f} lb, dm={total_released*2.20462:.1f} lb",
+        f"mdot_avg={total_released/max(t_final,1.0)*3600:.1f} kg/hr",
+    ]
+    if inputs.U_htc > EPSILON:
+        messages.append(f"Wall heat transfer: U={inputs.U_htc:.0f} W/m²·K")
+    if reached_target:
+        messages.append(f"P_target={P_target/PSI2PA:.1f} psia reached at t={t_final:.1f}s")
+    else:
+        messages.append(f"t_max={inputs.t_max:.0f}s reached, P_final={P_arr[-1]/PSI2PA:.1f} psia")
 
     return {
         "t": t_arr,
@@ -480,9 +549,9 @@ def _solve_api521_blowdown(inputs: VesselInput) -> dict:
         "m_remaining": m_arr,
         "total_mass_released": float(total_released),
         "t_final": float(t_final),
-        "events": {},
+        "events": events,
         "phase_quality": None,
-        "messages": ["API 521 simplified method used (isentropic gas expansion)"],
+        "messages": messages,
     }
 
 
