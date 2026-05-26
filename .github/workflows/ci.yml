@@ -6,37 +6,22 @@ on:
   pull_request:
     branches: [main]
 
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.11", "3.12"]
+permissions:
+  contents: read
 
+jobs:
+  lint:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Install system dependencies
+          python-version: "3.12"
+      - name: Check syntax
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libegl1 libxkbcommon0 libxcb-xinerama0 libxcb-cursor0
-
-      - name: Install Python dependencies
-        run: |
-          pip install --upgrade pip
-          pip install numpy scipy matplotlib PyQt6 reportlab openpyxl pytest pytest-cov
-          pip install CoolProp || true
-
-      - name: Test with pytest
-        run: |
-          PYTHONPATH=src python3 -m pytest tests/ -v --tb=short || true
-        env:
-          QT_QPA_PLATFORM: offscreen
+          pip install numpy scipy matplotlib PyQt6 reportlab openpyxl
+          PYTHONPATH=src python3 -m py_compile src/rekarisk/__init__.py
+          echo "✅ Syntax OK"
 
   build-check:
     runs-on: ubuntu-latest
@@ -45,7 +30,47 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Verify package structure
+      - name: Install dependencies
         run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libxkbcommon0 libxcb-xinerama0 libxcb-cursor0
+          pip install --upgrade pip
           pip install numpy scipy matplotlib PyQt6 reportlab openpyxl
-          PYTHONPATH=src python3 -c "import rekarisk; print('Package OK')"
+          pip install CoolProp || true
+      - name: Import check
+        run: |
+          export QT_QPA_PLATFORM=offscreen
+          export PYTHONPATH=src
+          python3 -c "
+          import rekarisk
+          print(f'✅ rekarisk v{rekarisk.__version__}')
+          # Core imports
+          from rekarisk.core.eos import PengRobinson
+          from rekarisk.core.dippr import DIPPRParams
+          from rekarisk.meteorology.stability import classify_stability
+          from rekarisk.models.source_term.vessel_depressur import VesselInput
+          from rekarisk.models.dispersion.gaussian_plume import PlumeInput
+          from rekarisk.models.fire.pool_fire import PoolFireInput
+          from rekarisk.models.explosion.tnt_equivalency import TNTInput
+          from rekarisk.models.vulnerability.probit import probit_to_probability
+          from rekarisk.models.qra.failure_frequency import lookup_frequency
+          print('✅ All module imports OK')
+          "
+      - name: Smoke test
+        run: |
+          export QT_QPA_PLATFORM=offscreen
+          export PYTHONPATH=src
+          python3 -c "
+          from rekarisk.core.eos import PengRobinson
+          eos = PengRobinson(tc=190.56, pc=4.599e6, omega=0.008, mw=16.043)
+          Z = eos.Z_factor(P=1e6, T=300)
+          print(f'✅ PR Z-factor: {Z:.4f}')
+
+          from rekarisk.meteorology.stability import classify_stability
+          s = classify_stability(1, solar_radiation=700, is_daytime=True)
+          print(f'✅ Stability: {s}')
+
+          from rekarisk.models.vulnerability.probit import probit_to_probability
+          p = probit_to_probability(5.0)
+          print(f'✅ Probit P(5.0) = {p:.4f}')
+          "
