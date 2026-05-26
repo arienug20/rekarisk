@@ -128,7 +128,16 @@ def cmd_substances(args: argparse.Namespace) -> int:
         from rekarisk.core.substance_db import SubstanceDatabase
 
         db = SubstanceDatabase()
-        results = db.search(args.query)
+        try:
+            db.load()
+        except Exception:
+            # Database schema mismatch — load raw JSON and search directly
+            db_path = db.path if hasattr(db, 'path') else None
+            print(f"Note: using raw database search for '{args.query}'")
+            _cmd_substances_raw(args.query)
+            return 0
+
+        results = db.search(args.query) if db.is_loaded else []
 
         if not results:
             print(f"No substances found matching '{args.query}'")
@@ -136,7 +145,7 @@ def cmd_substances(args: argparse.Namespace) -> int:
 
         print(f"Matches for '{args.query}':")
         for sub in results[:20]:
-            name = getattr(sub, "chemical_name", getattr(sub, "name", str(sub)))
+            name = getattr(sub, "name", str(sub))
             formula = getattr(sub, "formula", "")
             cas = getattr(sub, "cas_number", "")
             print(f"  • {name}  {formula}  ({cas})")
@@ -147,6 +156,42 @@ def cmd_substances(args: argparse.Namespace) -> int:
     except Exception as exc:
         print(f"Error: {exc}")
         return 1
+
+
+def _cmd_substances_raw(query: str) -> None:
+    """Fallback: search the raw substances.json directly."""
+    import json
+    import os
+
+    db_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "substances.json")
+    db_path = os.path.abspath(db_path)
+
+    if not os.path.exists(db_path):
+        print(f"Database file not found: {db_path}")
+        return
+
+    with open(db_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    q = query.lower().strip()
+    matches = []
+    for sub in data.get("substances", []):
+        name = (sub.get("name") or "").lower()
+        formula = (sub.get("formula") or "").lower()
+        cas = (sub.get("cas") or "").lower()
+        if q in name or q in formula or q == cas:
+            matches.append(sub)
+
+    if not matches:
+        print(f"No substances found matching '{query}'")
+        return
+
+    print(f"Matches for '{query}':")
+    for sub in matches[:20]:
+        name = sub.get("name", "?")
+        formula = sub.get("formula", "")
+        cas = sub.get("cas", "")
+        print(f"  • {name}  {formula}  ({cas})")
 
 
 # ── argument parser ─────────────────────────────────────────────────────────
