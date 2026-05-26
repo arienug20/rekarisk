@@ -509,7 +509,7 @@ def simulate_pool(inputs: PoolInput) -> PoolResult:
             if t <= t_trans:
                 R_cur = gravity_inertia_radius(max(t, 1e-6), V0, g_prime)
             else:
-                R_cur = gravity_viscous_radius(max(t, 1e-6), V0, g_prime)
+                R_cur = gravity_viscous_radius(max(t, 1e-6), V0, g_prime, nu)
 
         # Pool area
         A_pool = math.pi * R_cur * R_cur

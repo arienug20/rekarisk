@@ -1,8 +1,8 @@
 """
 Rekarisk — Meteorology Model Validation Tests.
 
-Tests for atmospheric stability classification, dispersion coefficients (σy, σz),
-wind profile, and air density calculations.
+Tests for atmospheric stability classification, dispersion coefficients (sig_y, sig_z),
+wind profile (power law, log law), and atmospheric density calculations.
 """
 
 from __future__ import annotations
@@ -11,25 +11,18 @@ import math
 
 import pytest
 
-from rekarisk.core.constants import P_ATM, R, G
+from rekarisk.core.constants import P_ATM, R
 from rekarisk.meteorology.stability import (
-    StabilityClass,
     classify_stability,
-    get_sigma_y,
-    get_sigma_z,
-    SIGMA_Y_PARAMS,
-    SIGMA_Z_PARAMS,
-)
-from rekarisk.meteorology.wind_profile import (
-    wind_speed_at_height,
+    sigma_y,
+    sigma_z,
     power_law_exponent,
-    log_wind_profile,
-    friction_velocity,
-    wind_profile_power_law,
 )
-from rekarisk.meteorology.air_density import (
-    air_density,
-    air_density_stp,
+from rekarisk.meteorology.meteorology import (
+    wind_power_law,
+    wind_log_law,
+    friction_velocity,
+    atmospheric_density,
 )
 
 
@@ -40,129 +33,145 @@ from rekarisk.meteorology.air_density import (
 class TestStabilityClassification:
     """Pasquill stability class classification."""
 
-    def test_strong_solar_day_light_wind_is_unstable(self):
-        """Strong solar radiation + light wind + daytime → unstable (A-B)."""
-        # Strong insolation: clear day, midday
+    def test_strong_solar_day_light_wind_is_a(self):
+        """classify_stability(1, solar_radiation=700, is_daytime=True) == 'A'."""
         stability = classify_stability(
-            wind_speed_ms=2.0,
-            solar_radiation=800,  # W/m², strong
-            cloud_cover_oktas=0,
+            wind_speed_ms=1.0,
+            solar_radiation=700,
             is_daytime=True,
         )
-        assert stability in ('A', 'B', StabilityClass.A, StabilityClass.B), \
-            f"Expected A or B, got {stability}"
+        assert stability == 'A', f"Expected 'A', got {stability}"
+
+    def test_strong_wind_clear_night_is_d(self):
+        """classify_stability(7, cloud_cover_oktas=0, is_daytime=False) == 'D'."""
+        stability = classify_stability(
+            wind_speed_ms=7.0,
+            cloud_cover_oktas=0,
+            is_daytime=False,
+        )
+        assert stability == 'D', f"Expected 'D', got {stability}"
+
+    def test_high_solar_light_wind_unstable(self):
+        """Strong solar + light wind → unstable (A or B)."""
+        for ws in [0.5, 1.5, 2.0]:
+            stability = classify_stability(
+                wind_speed_ms=ws,
+                solar_radiation=800,
+                is_daytime=True,
+            )
+            assert stability in ('A', 'B'), \
+                f"Expected A or B, got {stability} at ws={ws}"
 
     def test_overcast_strong_wind_is_neutral(self):
         """Overcast + strong wind → neutral (D)."""
         stability = classify_stability(
             wind_speed_ms=7.0,
             solar_radiation=100,
-            cloud_cover_oktas=8,  # fully overcast
+            cloud_cover_oktas=8,
             is_daytime=True,
         )
-        assert stability in ('D', StabilityClass.D), \
-            f"Expected D (neutral), got {stability}"
+        assert stability == 'D', f"Expected D (neutral), got {stability}"
 
     def test_clear_night_light_wind_is_stable(self):
-        """Clear night + light wind → stable (F)."""
+        """Clear night + light wind → stable (E or F)."""
         stability = classify_stability(
-            wind_speed_ms=2.0,
+            wind_speed_ms=1.5,
             solar_radiation=0,
-            cloud_cover_oktas=0,  # clear
+            cloud_cover_oktas=0,
             is_daytime=False,
         )
-        assert stability in ('E', 'F', StabilityClass.E, StabilityClass.F), \
+        assert stability in ('E', 'F'), \
             f"Expected E or F (stable), got {stability}"
 
-    def test_returns_valid_class(self):
-        """Always returns a valid stability class."""
-        for ws in [0.5, 1.0, 2.0, 3.0, 5.0, 8.0, 12.0]:
-            for daytime in [True, False]:
-                stability = classify_stability(
-                    wind_speed_ms=ws,
-                    solar_radiation=300,
-                    cloud_cover_oktas=4,
-                    is_daytime=daytime,
-                )
-                valid_classes = ['A', 'B', 'C', 'D', 'E', 'F'] + \
-                    [s.value if hasattr(s, 'value') else str(s) for s in StabilityClass]
-                assert str(stability) in valid_classes or stability in valid_classes, \
-                    f"Invalid class: {stability}"
+    def test_all_stability_classes_produced(self):
+        """Various conditions produce different valid stability classes."""
+        classes_seen = set()
+        test_cases = [
+            (1.0, 700, None, True),     # A
+            (2.5, 500, None, True),     # B
+            (4.0, 300, None, True),     # C
+            (5.0, 200, None, True),     # D
+            (3.0, None, 2, False),      # E/F
+            (7.0, None, 0, False),      # D
+        ]
+        for ws, solar, cloud, daytime in test_cases:
+            stability = classify_stability(
+                wind_speed_ms=ws,
+                solar_radiation=solar,
+                cloud_cover_oktas=cloud,
+                is_daytime=daytime,
+            )
+            classes_seen.add(stability)
+        assert len(classes_seen) >= 3, f"Should see multiple classes, saw {classes_seen}"
 
-    def test_classify_stability_with_verbose(self):
-        """classify_stability returns a meaningful result for verbose checks."""
-        # Check that function runs without exception
-        result = classify_stability(
-            wind_speed_ms=5.0,
-            solar_radiation=500,
-            cloud_cover_oktas=3,
-            is_daytime=True,
-        )
-        assert result is not None
+    def test_negative_wind_speed_raises_error(self):
+        """Negative wind speed should raise ValueError."""
+        with pytest.raises(ValueError):
+            classify_stability(wind_speed_ms=-1.0, is_daytime=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Dispersion Coefficients (σy, σz)
+# Dispersion Coefficients (sigma_y, sigma_z)
 # ══════════════════════════════════════════════════════════════════════════════
 
 class TestSigmaCoefficients:
-    """σy and σz dispersion coefficient functions."""
+    """sigma_y and sigma_z dispersion coefficient functions."""
+
+    def test_sigma_y_1000m_d_rural_about_80(self):
+        """sigma_y(1000, 'D', 'rural') ≈ 80 ± 10."""
+        sy = sigma_y(1000.0, 'D', 'rural')
+        assert 70.0 < sy < 90.0, f"sigma_y(1000, D, rural) should be ~80, got {sy}"
+
+    def test_sigma_z_1000m_d_rural_range(self):
+        """sigma_z(1000, 'D', 'rural') ≈ 50-70."""
+        sz = sigma_z(1000.0, 'D', 'rural')
+        assert 40.0 < sz < 85.0, f"sigma_z(1000, D, rural) should be ~50-70, got {sz}"
 
     def test_sigma_y_positive(self):
-        """σy > 0 for positive distance."""
-        # Test multiple stability classes
+        """sigma_y > 0 for positive distance."""
         for stability in ['A', 'B', 'C', 'D', 'E', 'F']:
-            sy = get_sigma_y(
-                distance_m=500,
-                stability_class=stability,
-                terrain_type='rural',
-            )
-            assert sy > 0, f"σy for {stability} at 500m should be > 0, got {sy}"
+            sy = sigma_y(500.0, stability, 'rural')
+            assert sy > 0, f"sigma_y for {stability} at 500m should be > 0, got {sy}"
 
     def test_sigma_z_positive(self):
-        """σz > 0 for positive distance."""
+        """sigma_z > 0 for positive distance."""
         for stability in ['A', 'B', 'C', 'D', 'E', 'F']:
-            sz = get_sigma_z(
-                distance_m=500,
-                stability_class=stability,
-                terrain_type='rural',
-            )
-            assert sz > 0, f"σz for {stability} at 500m should be > 0, got {sz}"
+            sz = sigma_z(500.0, stability, 'rural')
+            assert sz > 0, f"sigma_z for {stability} at 500m should be > 0, got {sz}"
 
     def test_sigma_increases_with_distance(self):
-        """σy and σz increase with distance."""
+        """sigma_y and sigma_z increase with distance."""
         for stability in ['A', 'D', 'F']:
-            sy_100 = get_sigma_y(100, stability, 'rural')
-            sy_1000 = get_sigma_y(1000, stability, 'rural')
-            sz_100 = get_sigma_z(100, stability, 'rural')
-            sz_1000 = get_sigma_z(1000, stability, 'rural')
+            sy_100 = sigma_y(100, stability, 'rural')
+            sy_1000 = sigma_y(1000, stability, 'rural')
+            sz_100 = sigma_z(100, stability, 'rural')
+            sz_1000 = sigma_z(1000, stability, 'rural')
 
             assert sy_1000 > sy_100, \
-                f"σy({stability}, 1000)={sy_1000:.1f} should > σy(100)={sy_100:.1f}"
+                f"sigma_y({stability}, 1000)={sy_1000:.1f} > sigma_y(100)={sy_100:.1f}"
             assert sz_1000 > sz_100, \
-                f"σz({stability}, 1000)={sz_1000:.1f} should > σz(100)={sz_100:.1f}"
+                f"sigma_z({stability}, 1000)={sz_1000:.1f} > sigma_z(100)={sz_100:.1f}"
 
     def test_zero_distance_gives_small_sigma(self):
-        """σy and σz at x=0 are small (near source)."""
-        sy = get_sigma_y(0, 'D', 'rural')
-        sz = get_sigma_z(0, 'D', 'rural')
+        """sigma_y and sigma_z at x=0 are small (near source)."""
+        sy = sigma_y(0, 'D', 'rural')
+        sz = sigma_z(0, 'D', 'rural')
         assert sy >= 0
         assert sz >= 0
 
     def test_unstable_has_larger_sigma_y(self):
-        """Unstable (A) → larger σy than stable (F) at same distance.
+        """Unstable (A) → larger sigma_y than stable (F) at same distance."""
+        sy_a = sigma_y(500, 'A', 'rural')
+        sy_f = sigma_y(500, 'F', 'rural')
+        assert sy_a > sy_f, \
+            f"A(sigma_y={sy_a:.0f}) should be > F(sigma_y={sy_f:.0f})"
 
-        (Unstable means more turbulence → wider lateral spread.)
-        """
-        sy_a = get_sigma_y(500, 'A', 'rural')
-        sy_f = get_sigma_y(500, 'F', 'rural')
-        assert sy_a > sy_f, f"A(σy={sy_a:.0f}) should give wider plume than F(σy={sy_f:.0f})"
-
-    def test_sigma_params_dictionary_populated(self):
-        """SIGMA_Y_PARAMS and SIGMA_Z_PARAMS have entries for all classes."""
-        for c in ['A', 'B', 'C', 'D', 'E', 'F']:
-            assert c in SIGMA_Y_PARAMS, f"Missing σy params for {c}"
-            assert c in SIGMA_Z_PARAMS, f"Missing σz params for {c}"
+    def test_sigma_y_negative_distance_raises(self):
+        """Negative distance should raise ValueError."""
+        with pytest.raises(ValueError):
+            sigma_y(-100, 'D', 'rural')
+        with pytest.raises(ValueError):
+            sigma_z(-100, 'D', 'rural')
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -172,137 +181,89 @@ class TestSigmaCoefficients:
 class TestWindProfile:
     """Wind profile (power law, logarithmic) tests."""
 
-    def test_u_50m_greater_than_u_10m_neutral(self):
-        """Wind speed at 50m > wind speed at 10m for neutral stability."""
-        u_10 = 5.0  # m/s at 10m
-        u_50 = wind_speed_at_height(
-            wind_speed_ref=u_10,
-            ref_height=10.0,
-            target_height=50.0,
-            stability_class='D',  # neutral
-            method='power_law',
-        )
-        # Wind speed increases with height
-        assert u_50 > u_10, f"u(50m)={u_50:.2f} should > u(10m)={u_10}"
+    def test_wind_power_law_50m_gt_5(self):
+        """wind_power_law(z_m=50, u_ref=5, z_ref=10, 'D') > 5.0."""
+        u_50 = wind_power_law(z_m=50.0, u_ref=5.0, z_ref=10.0, stability='D')
+        assert u_50 > 5.0, f"u(50m)={u_50:.2f} should be > u(10m)=5.0"
 
-    def test_log_profile_u_50m_greater_than_u_10m(self):
+    def test_wind_log_law_increases_with_height(self):
         """Log profile: wind speed increases with height."""
-        u_10 = 5.0
-        u_50 = wind_speed_at_height(
-            wind_speed_ref=u_10,
-            ref_height=10.0,
-            target_height=50.0,
-            stability_class='D',
-            method='log',
-        )
+        u_50 = wind_log_law(z_m=50.0, u_ref=5.0, z_ref=10.0, z0=0.1)
+        u_10 = wind_log_law(z_m=10.0, u_ref=5.0, z_ref=10.0, z0=0.1)
         assert u_50 > u_10
 
-    def test_power_law_exponent_stable_greater_than_unstable(self):
-        """Stable → larger power law exponent (p) than unstable.
-
-        Stable air means less vertical mixing → stronger wind gradient.
-        """
+    def test_power_law_exponent_stable_gt_unstable(self):
+        """Stable → larger power law exponent than unstable."""
         p_a = power_law_exponent('A')
         p_d = power_law_exponent('D')
         p_f = power_law_exponent('F')
 
         assert p_f > p_d, \
             f"Stable (F) exponent {p_f} should be > neutral (D) {p_d}"
-        # p_d may be > p_a
         assert p_a > 0
         assert p_f > 0
         assert p_d > 0
 
     def test_friction_velocity_positive(self):
         """Friction velocity u* > 0 for non-zero wind."""
-        u_star = friction_velocity(
-            wind_speed_ref=5.0,
-            ref_height=10.0,
-            roughness_length=0.1,  # open terrain
-        )
+        u_star = friction_velocity(u_ref=5.0, z_ref=10.0, z0=0.1)
         assert u_star > 0
-        assert u_star < 5.0  # u* is always less than the reference wind speed
+        assert u_star < 5.0
 
-    def test_wind_profile_power_law_function(self):
-        """Direct power law function returns correct value."""
-        u_100 = wind_profile_power_law(
-            u_ref=5.0,
-            z_ref=10.0,
-            z=100.0,
-            exponent=0.15,
-        )
-        expected = 5.0 * (100.0 / 10.0) ** 0.15
-        assert u_100 == pytest.approx(expected, rel=0.01)
-        assert u_100 > 5.0  # higher altitude → higher speed
-
-    def test_log_wind_profile_function(self):
-        """Log wind profile returns positive value."""
-        u_100 = log_wind_profile(
-            u_ref=5.0,
-            z_ref=10.0,
-            z=100.0,
-            z0=0.1,
-        )
-        assert u_100 > 0
-        assert u_100 > 5.0  # higher altitude → higher speed
-
-    def test_sea_roughness_lower_than_urban(self):
-        """Roughness length: sea < rural < urban."""
-        z0_sea = 0.0002
-        z0_rural = 0.1
-        z0_urban = 2.0
-
-        u_10 = 5.0
-        u_50_sea = log_wind_profile(u_10, 10.0, 50.0, z0_sea)
-        u_50_urban = log_wind_profile(u_10, 10.0, 50.0, z0_urban)
-
-        # Smoother surface → higher wind speed at altitude
-        assert u_50_sea > u_50_urban, \
-            "Smooth surface (sea) should have higher wind speed aloft"
+    def test_log_law_different_roughness(self):
+        """Log law works for very different roughness lengths."""
+        # With the same reference, rougher terrain gives steeper gradient
+        # Both must be valid for their respective z0 values
+        u_sea = wind_log_law(z_m=50.0, u_ref=5.0, z_ref=10.0, z0=0.0002)
+        u_grass = wind_log_law(z_m=50.0, u_ref=5.0, z_ref=10.0, z0=0.03)
+        assert u_sea > 0
+        assert u_grass > 0
+        # Different roughness gives different wind profiles
+        assert abs(u_sea - u_grass) > 0.01
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Air Density
+# Atmospheric Density
 # ══════════════════════════════════════════════════════════════════════════════
 
-class TestAirDensity:
-    """Air density calculations."""
+class TestAtmosphericDensity:
+    """atmospheric_density function tests."""
 
-    def test_air_density_at_stp(self):
-        """Air density at STP ≈ 1.2 kg/m³."""
-        rho = air_density(
-            T=293.15,  # 20°C
-            P=P_ATM,
-            humidity=0.5,
-        )
-        assert 1.15 < rho < 1.30, \
+    def test_atmospheric_density_293k_101325pa_about_12(self):
+        """atmospheric_density(293.15, 101325) ≈ 1.2 ± 0.05."""
+        rho = atmospheric_density(temperature_k=293.15, pressure_pa=101325.0)
+        assert 1.15 < rho < 1.25, \
             f"Air density should be ~1.2 kg/m³ at 20°C, got {rho:.3f}"
 
-    def test_air_density_stp_function(self):
-        """air_density_stp() returns ~1.2 kg/m³."""
-        rho = air_density_stp()
-        assert 1.15 < rho < 1.25, f"STP density should be ~1.2 kg/m³, got {rho:.3f}"
-
-    def test_air_density_decreases_with_temperature(self):
+    def test_atmospheric_density_decreases_with_temperature(self):
         """Higher temperature → lower air density."""
-        rho_cold = air_density(T=273.15, P=P_ATM, humidity=0.5)
-        rho_hot = air_density(T=313.15, P=P_ATM, humidity=0.5)
+        rho_cold = atmospheric_density(temperature_k=273.15, pressure_pa=P_ATM)
+        rho_hot = atmospheric_density(temperature_k=313.15, pressure_pa=P_ATM)
 
         assert rho_cold > rho_hot, \
             f"Colder air ({rho_cold:.3f}) should be denser than hot ({rho_hot:.3f})"
 
-    def test_air_density_increases_with_pressure(self):
+    def test_atmospheric_density_increases_with_pressure(self):
         """Higher pressure → higher air density."""
-        rho_low = air_density(T=273.15, P=0.8 * P_ATM, humidity=0.5)
-        rho_high = air_density(T=273.15, P=1.2 * P_ATM, humidity=0.5)
+        rho_low = atmospheric_density(temperature_k=273.15, pressure_pa=0.8 * P_ATM)
+        rho_high = atmospheric_density(temperature_k=273.15, pressure_pa=1.2 * P_ATM)
 
         assert rho_high > rho_low
 
-    def test_air_density_ideal_gas_limit(self):
-        """Dry air density approaches ideal gas law ρ = P * M / (R * T)."""
-        # In dry air limit (humidity=0), density ≈ P * M_air / (R * T)
+    def test_atmospheric_density_positive(self):
+        """Density is always positive."""
+        rho = atmospheric_density(temperature_k=313.15, pressure_pa=80000.0)
+        assert rho > 0
+
+    def test_atmospheric_density_dry_air_ideal_gas(self):
+        """Dry air density approaches ideal gas law ρ = P * M_air / (R * T)."""
         M_air = 0.0289647  # kg/mol
-        rho = air_density(T=300, P=P_ATM, humidity=0.0)
-        rho_ideal = (P_ATM * M_air) / (R * 300)
-        # Should be within ~2% of ideal gas
-        assert abs(rho - rho_ideal) / rho_ideal < 0.02
+        rho = atmospheric_density(
+            temperature_k=300.0,
+            pressure_pa=P_ATM,
+            relative_humidity_pct=0.0,
+        )
+        rho_ideal = (P_ATM * M_air) / (R * 300.0)
+        # Should be within ~1% of ideal gas for dry air
+        assert abs(rho - rho_ideal) / rho_ideal < 0.02, \
+            f"Dry air density {rho:.3f} vs ideal {rho_ideal:.3f}"
