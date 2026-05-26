@@ -11,3 +11,4 @@ Contains all consequence analysis physical models:
 """
 
 from .source_term import *
+from . import dispersion

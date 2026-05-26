@@ -35,3 +35,13 @@ try:
 except ImportError:
     SourceTermResultsPanel = None
     SourceTermResultsDock = None
+
+try:
+    from .dispersion_panel import DispersionPanel
+except ImportError:
+    DispersionPanel = None
+
+try:
+    from .dispersion_results import DispersionResultsPanel
+except ImportError:
+    DispersionResultsPanel = None
