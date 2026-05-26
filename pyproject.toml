@@ -4,14 +4,56 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rekarisk"
-version = "0.1.0.dev0"
+version = "1.0.0.dev0"
 description = "Consequence & Risk Analysis for Safety Engineers"
 readme = "README.md"
-requires-python = ">=3.11"
 license = {text = "MIT"}
+requires-python = ">=3.11"
 authors = [
-    {name = "Arie Nugraha", email = "arienug2000@gmail.com"},
+    {name = "Rekarisk Contributors"},
 ]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Manufacturing",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Atmospheric Science",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "matplotlib>=3.7",
+    "PyQt6>=6.5",
+    "reportlab>=4.0",
+    "openpyxl>=3.1",
+    "jsonschema>=4.20",
+    "platformdirs>=4.0",
+]
+
+[project.optional-dependencies]
+coolprop = ["CoolProp>=6.4"]
+dev = ["pytest>=7.0", "pytest-cov>=4.0", "ruff>=0.3", "mypy>=1.8"]
+gis = ["cartopy>=0.22", "shapely>=2.0", "fiona>=1.9", "pyproj>=3.6", "rasterio>=1.3"]
+3d = ["pyvista>=0.43"]
+kml = ["simplekml>=1.3"]
+all = ["rekarisk[dev,coolprop,gis,3d,kml]"]
+
+[project.scripts]
+rekarisk = "rekarisk.cli:main"
+
+[project.gui-scripts]
+rekarisk-gui = "rekarisk.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-dir]
+"" = "src"
 
 [tool.ruff]
 line-length = 100
