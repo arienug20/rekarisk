@@ -502,10 +502,76 @@ class Substance:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Substance":
-        """Create a Substance from a dictionary (from JSON import)."""
-        # Filter out keys not in the dataclass
+        """Create a Substance from a dictionary (from JSON import).
+
+        Supports both long names (cas_number) and short aliases (cas).
+        """
+        # Alias map: short JSON key → dataclass field name
+        ALIASES = {
+            'cas': 'cas_number',
+            'un': 'un_number',
+            'mw': 'molecular_weight',
+            'nbp': 'normal_boiling_point',
+            'tc': 'critical_temperature',
+            'pc': 'critical_pressure',
+            'vc': 'critical_volume',
+            'omega': 'acentric_factor',
+            'rho_liq': 'liquid_density',
+            'lfl': 'lower_flammability_limit',
+            'ufl': 'upper_flammability_limit',
+            'flash_pt': 'flash_point',
+            'ait': 'auto_ignition_temp',
+            'dhc': 'heat_of_combustion',
+            'dhv': 'heat_of_vaporization',
+        }
+        expanded = {}
+        for k, v in data.items():
+            key = ALIASES.get(k, k)
+            expanded[key] = v
+        # Handle dippr sub-dict → individual dippr_* fields
+        dippr_data = expanded.pop('dippr', None)
+        if dippr_data and isinstance(dippr_data, dict):
+            DIPPR_MAP = {
+                'vp': 'dippr_vapor_pressure',
+                'vp_params': 'dippr_vapor_pressure',
+                'liq_density': 'dippr_liquid_density',
+                'rho_liq_params': 'dippr_liquid_density',
+                'liq_cp': 'dippr_heat_capacity_liquid',
+                'gas_cp': 'dippr_heat_capacity_gas',
+                'liq_visc': 'dippr_viscosity_liquid',
+                'gas_visc': 'dippr_viscosity_gas',
+                'liq_tcond': 'dippr_thermal_cond_liquid',
+                'gas_tcond': 'dippr_thermal_cond_gas',
+                'surf_tens': 'dippr_surface_tension',
+                'hvap': 'dippr_heat_of_vaporization',
+                'h_ideal': 'dippr_ideal_gas_enthalpy',
+            }
+            for dk, dv in dippr_data.items():
+                target = DIPPR_MAP.get(dk)
+                if target:
+                    # Convert dict to tuple for tuple-typed fields
+                    if isinstance(dv, dict):
+                        from .dippr import DIPPRParams
+                        try:
+                            expanded[target] = DIPPRParams.from_dict(dv)
+                        except Exception:
+                            expanded[target] = dv
+                    else:
+                        expanded[target] = dv
+        # Handle toxic fields
+        for toxic_key in ['aegl1_60min', 'aegl2_60min', 'aegl3_60min',
+                          'idlh', 'probit_a', 'probit_b', 'probit_n',
+                          'toxic_n']:
+            if toxic_key in expanded and expanded[toxic_key] is None:
+                expanded[toxic_key] = None
+        # Filter to valid dataclass keys only
         valid_keys = {f.name for f in fields(cls)}
-        filtered = {k: v for k, v in data.items() if k in valid_keys}
+        filtered = {k: v for k, v in expanded.items() if k in valid_keys}
+        # Auto-generate id from name if missing
+        if 'id' not in filtered and 'name' in filtered:
+            filtered['id'] = filtered['name']
+        elif 'id' not in filtered:
+            filtered['id'] = 'unknown'
         return cls(**filtered)
 
     def __repr__(self) -> str:
