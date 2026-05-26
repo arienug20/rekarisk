@@ -13,3 +13,6 @@ Contains all consequence analysis physical models:
 from .source_term import *
 from . import dispersion
 from . import fire
+from . import explosion
+from . import vulnerability
+from . import qra

@@ -55,3 +55,14 @@ try:
     from .fire_results import FireResultsPanel
 except ImportError:
     FireResultsPanel = None
+
+try:
+    from .qra_panel import QRAPanel
+except ImportError:
+    QRAPanel = None
+
+try:
+    from .qra_results import QRAResultsPanel, QRAResultsDock
+except ImportError:
+    QRAResultsPanel = None
+    QRAResultsDock = None
