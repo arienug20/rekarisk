@@ -7,8 +7,8 @@ and filtering by phase, hazard class, or tag.
 
 from __future__ import annotations
 
-from PyQt5.QtCore import pyqtSignal, Qt, QTimer
-from PyQt5.QtWidgets import (
+from PyQt6.QtCore import pyqtSignal, Qt, QTimer
+from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QListWidget,
     QListWidgetItem, QLabel, QComboBox, QGroupBox, QFormLayout,
     QSplitter, QFrame, QTextEdit,

@@ -4,20 +4,20 @@ Rekarisk UI — Source Term Input Panel.
 Provides a tabbed input form for all source term calculation types:
 Orifice, Vessel Blowdown, Pipe Rupture, Relief Valve, and Pool Spill.
 
-Uses PyQt5 for the UI framework.
+Uses PyQt6 for the UI framework.
 """
 
 from __future__ import annotations
 
 from typing import Optional
 
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTabWidget,
     QLabel, QLineEdit, QComboBox, QDoubleSpinBox,
     QPushButton, QFormLayout, QGroupBox, QCheckBox,
     QSplitter, QFrame, QTextEdit, QScrollArea,
 )
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
 
 
 # ══════════════════════════════════════════════════════════════════════════════

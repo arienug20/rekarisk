@@ -1,7 +1,7 @@
 """
 Rekarisk UI Module — Desktop application interface.
 
-Provides the PyQt5-based desktop GUI with dock-based layout,
+Provides the PyQt6-based desktop GUI with dock-based layout,
 project management, substance selection, and scenario editing.
 """
 

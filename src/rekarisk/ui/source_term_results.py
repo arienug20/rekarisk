@@ -9,14 +9,14 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTabWidget,
     QLabel, QTableWidget, QTableWidgetItem, QHeaderView,
     QPushButton, QGroupBox, QSplitter, QScrollArea,
     QTextBrowser,
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QSize
-from PyQt5.QtGui import QFont, QColor
+from PyQt6.QtCore import Qt, pyqtSignal, QSize
+from PyQt6.QtGui import QFont, QColor
 
 import numpy as np
 

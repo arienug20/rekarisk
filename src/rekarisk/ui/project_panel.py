@@ -15,10 +15,9 @@ and double-click to open/edit.
 
 from __future__ import annotations
 
-from PyQt5.QtCore import pyqtSignal, Qt
-from PyQt5.QtWidgets import QAction
-from PyQt5.QtGui import QIcon
-from PyQt5.QtWidgets import (
+from PyQt6.QtCore import pyqtSignal, Qt
+from PyQt6.QtGui import QAction, QIcon
+from PyQt6.QtWidgets import (
     QTreeWidget, QTreeWidgetItem, QMenu, QVBoxLayout, QWidget,
     QLabel, QHeaderView, QAbstractItemView,
 )

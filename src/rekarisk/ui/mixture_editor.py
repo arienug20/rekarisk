@@ -1,7 +1,7 @@
 """
 Rekarisk — Mixture Composition Editor.
 
-PyQt5 dialog for editing multi-component mixture compositions.
+PyQt6 dialog for editing multi-component mixture compositions.
 Supports mole/mass fraction entry, auto-normalization, property preview,
 and integration with substance database + EoS engine.
 
@@ -17,14 +17,14 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtWidgets import (
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
     QPushButton, QLabel, QLineEdit, QHeaderView, QMessageBox,
     QGroupBox, QFormLayout, QAbstractItemView, QComboBox,
     QSplitter, QTextEdit, QDialogButtonBox, QWidget,
 )
-from PyQt5.QtGui import QDoubleValidator, QColor, QBrush
+from PyQt6.QtGui import QDoubleValidator, QColor, QBrush
 
 
 # Try to import substance database and EoS
@@ -294,7 +294,7 @@ class MixtureEditorDialog(QDialog):
 
     def _simple_input(self, title: str, prompt: str) -> tuple:
         """Simple text input dialog (fallback)."""
-        from PyQt5.QtWidgets import QInputDialog
+        from PyQt6.QtWidgets import QInputDialog
         text, ok = QInputDialog.getText(self, title, prompt)
         return text, ok
 
@@ -584,7 +584,7 @@ class MixtureEditorDialog(QDialog):
 if __name__ == "__main__":
     import sys
     import numpy as np
-    from PyQt5.QtWidgets import QApplication
+    from PyQt6.QtWidgets import QApplication
 
     app = QApplication(sys.argv)
 

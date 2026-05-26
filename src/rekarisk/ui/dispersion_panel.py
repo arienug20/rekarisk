@@ -1,7 +1,7 @@
 """
 Rekarisk UI — Dispersion Input Panel.
 
-Provides a PyQt5 tabbed input panel for dispersion calculations:
+Provides a PyQt6 tabbed input panel for dispersion calculations:
   - Source: Release parameters (rate, mass, duration)
   - Weather: Atmospheric conditions
   - Receptor Grid: Spatial grid definition
@@ -14,13 +14,13 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTabWidget,
     QLabel, QLineEdit, QComboBox, QDoubleSpinBox, QSpinBox,
     QPushButton, QFormLayout, QGroupBox, QCheckBox,
     QSplitter, QFrame, QProgressBar, QMessageBox, QScrollArea,
 )
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
 
 from rekarisk.meteorology.stability import StabilityClass, list_terrain_types
 from rekarisk.core.constants import P_ATM, T_0C

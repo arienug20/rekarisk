@@ -9,7 +9,7 @@ Displays dispersion calculation results using tables and matplotlib plots:
   - Summary table with key metrics
   - CSV export functionality
 
-Uses PyQt5 for the UI framework and matplotlib for plotting.
+Uses PyQt6 for the UI framework and matplotlib for plotting.
 """
 
 from __future__ import annotations
@@ -20,14 +20,14 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTabWidget,
     QLabel, QTableWidget, QTableWidgetItem, QHeaderView,
     QPushButton, QGroupBox, QSplitter, QScrollArea,
     QTextBrowser, QFileDialog, QMessageBox,
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QSize
-from PyQt5.QtGui import QFont, QColor
+from PyQt6.QtCore import Qt, pyqtSignal, QSize
+from PyQt6.QtGui import QFont, QColor
 
 # matplotlib for plotting
 try:

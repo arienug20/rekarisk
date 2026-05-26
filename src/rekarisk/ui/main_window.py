@@ -18,10 +18,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from PyQt5.QtCore import pyqtSignal, Qt, QSettings
-from PyQt5.QtWidgets import QAction
-from PyQt5.QtGui import QCloseEvent, QIcon
-from PyQt5.QtWidgets import (
+from PyQt6.QtCore import pyqtSignal, Qt, QSettings
+from PyQt6.QtGui import QAction, QCloseEvent, QIcon
+from PyQt6.QtWidgets import (
     QMainWindow, QDockWidget, QTabWidget, QWidget, QVBoxLayout,
     QLabel, QMessageBox, QStatusBar, QFileDialog, QApplication,
     QToolBar, QSplitter,
