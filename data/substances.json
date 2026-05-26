@@ -1,0 +1,2051 @@
+{
+  "version": "3.0",
+  "description": "Rekarisk Substance Database — DIPPR-enhanced properties for ~150 hazardous substances. Data from Yaws' Handbook, NIST WebBook, DIPPR 801 excerpts, Perry's Handbook.",
+  "count": 72,
+  "substances": [
+    {
+      "name": "Methane",
+      "cas": "74-82-8",
+      "un": 1971,
+      "formula": "CH4",
+      "mw": 16.043,
+      "nbp": 111.63,
+      "tc": 190.56,
+      "pc": 4599000.0,
+      "vc": 9.86e-05,
+      "omega": 0.008,
+      "rho_liq": 422.6,
+      "lfl": 5.0,
+      "ufl": 15.0,
+      "flash_pt": -188,
+      "ait": 537,
+      "tags": [
+        "flammable",
+        "gas"
+      ],
+      "dippr": {
+        "vp": {
+          "eq_type": 100,
+          "A": 39.205,
+          "B": -1324.4,
+          "C": -3.4366,
+          "D": 3.1019e-05,
+          "E": 2.0
+        },
+        "liq_density": {
+          "eq_type": 105,
+          "A": 3.0357,
+          "B": 0.21918,
+          "C": 190.56,
+          "D": 0.30096,
+          "E": 0.0
+        },
+        "liq_cp": {
+          "eq_type": 100,
+          "A": 101200,
+          "B": -1324,
+          "C": -3.44,
+          "D": 0.0,
+          "E": 0.0
+        },
+        "gas_cp": {
+          "eq_type": 100,
+          "A": 33262.0,
+          "B": 7993.3,
+          "C": 2085.0,
+          "D": 41613.0,
+          "E": 99.1
+        },
+        "liq_visc": {
+          "eq_type": 101,
+          "A": -17.529,
+          "B": -99.35,
+          "C": 0.0,
+          "D": 0.0,
+          "E": 0.0
+        },
+        "gas_visc": {
+          "eq_type": 102,
+          "A": 1.2013e-06,
+          "B": 0.51983,
+          "C": 153.61,
+          "D": 0.0,
+          "E": 0.0
+        },
+        "liq_tcond": {
+          "eq_type": 100,
+          "A": -1.0976,
+          "B": -0.0401,
+          "C": 0.0,
+          "D": 0.0,
+          "E": 0.0
+        },
+        "gas_tcond": {
+          "eq_type": 102,
+          "A": 0.0001804,
+          "B": 0.8464,
+          "C": 348.91,
+          "D": 0.0,
+          "E": 0.0
+        },
+        "surf_tens": {
+          "eq_type": 106,
+          "A": 0.05373,
+          "B": 1.167,
+          "C": 0.0,
+          "D": 0.0,
+          "E": 0.0
+        }
+      }
+    },
+    {
+      "name": "Ethane",
+      "cas": "74-84-0",
+      "un": 1035,
+      "formula": "C2H6",
+      "mw": 30.07,
+      "nbp": 184.55,
+      "tc": 305.32,
+      "pc": 4872000.0,
+      "vc": 0.0001455,
+      "omega": 0.099,
+      "rho_liq": 544.0,
+      "lfl": 3.0,
+      "ufl": 12.5,
+      "flash_pt": -135,
+      "ait": 472,
+      "tags": [
+        "flammable",
+        "gas"
+      ],
+      "dippr": {
+        "vp": {
+          "eq_type": 100,
+          "A": 51.857,
+          "B": -2598.7,
+          "C": -5.1283,
+          "D": 1.4913e-05,
+          "E": 2.0
+        },
+        "rho_liq": {
+          "eq_type": 105,
+          "A": 1.5069,
+          "B": 0.26639,
+          "C": 305.32,
+          "D": 0.29667,
+          "E": 0.0
+        }
+      }
+    },
+    {
+      "name": "Propane",
+      "cas": "74-98-6",
+      "un": 1978,
+      "formula": "C3H8",
+      "mw": 44.096,
+      "nbp": 231.11,
+      "tc": 369.83,
+      "pc": 4248000.0,
+      "vc": 0.0002,
+      "omega": 0.152,
+      "rho_liq": 581.0,
+      "lfl": 2.1,
+      "ufl": 9.5,
+      "flash_pt": -104,
+      "ait": 450,
+      "tags": [
+        "flammable",
+        "gas",
+        "lpg"
+      ],
+      "dippr": {
+        "vp": {
+          "eq_type": 100,
+          "A": 59.078,
+          "B": -3492.6,
+          "C": -6.0669,
+          "D": 1.0919e-05,
+          "E": 2.0
+        }
+      }
+    },
+    {
+      "name": "n-Butane",
+      "cas": "106-97-8",
+      "un": 1011,
+      "formula": "C4H10",
+      "mw": 58.123,
+      "nbp": 272.65,
+      "tc": 425.12,
+      "pc": 3796000.0,
+      "vc": 0.000255,
+      "omega": 0.2,
+      "rho_liq": 601.0,
+      "lfl": 1.6,
+      "ufl": 8.4,
+      "flash_pt": -60,
+      "ait": 405,
+      "tags": [
+        "flammable",
+        "gas",
+        "lpg"
+      ],
+      "dippr": {
+        "vp": {
+          "eq_type": 100,
+          "A": 66.343,
+          "B": -4363.2,
+          "C": -7.046,
+          "D": 9.4509e-06,
+          "E": 2.0
+        }
+      }
+    },
+    {
+      "name": "Isobutane",
+      "cas": "75-28-5",
+      "un": 1969,
+      "formula": "C4H10",
+      "mw": 58.123,
+      "nbp": 261.43,
+      "tc": 407.8,
+      "pc": 3640000.0,
+      "vc": 0.0002595,
+      "omega": 0.183,
+      "rho_liq": 593.0,
+      "lfl": 1.8,
+      "ufl": 8.4,
+      "flash_pt": -83,
+      "ait": 460,
+      "tags": [
+        "flammable",
+        "gas",
+        "lpg"
+      ],
+      "dippr": {
+        "vp": {
+          "eq_type": 100,
+          "A": 60.841,
+          "B": -3526.1,
+          "C": -5.8516,
+          "D": 3.7979e-17,
+          "E": 6.0
+        }
+      }
+    },
+    {
+      "name": "n-Pentane",
+      "cas": "109-66-0",
+      "un": 1265,
+      "formula": "C5H12",
+      "mw": 72.15,
+      "nbp": 309.22,
+      "tc": 469.7,
+      "pc": 3370000.0,
+      "vc": 0.000311,
+      "omega": 0.251,
+      "rho_liq": 626.0,
+      "lfl": 1.4,
+      "ufl": 7.8,
+      "flash_pt": -49,
+      "ait": 260,
+      "tags": [
+        "flammable",
+        "liquid"
+      ],
+      "dippr": {
+        "vp": {
+          "eq_type": 100,
+          "A": 78.335,
+          "B": -5420.3,
+          "C": -8.8253,
+          "D": 9.617e-06,
+          "E": 2.0
+        }
+      }
+    },
+    {
+      "name": "n-Hexane",
+      "cas": "110-54-3",
+      "un": 1208,
+      "formula": "C6H14",
+      "mw": 86.177,
+      "nbp": 341.88,
+      "tc": 507.6,
+      "pc": 3025000.0,
+      "vc": 0.000371,
+      "omega": 0.3,
+      "rho_liq": 659.0,
+      "lfl": 1.1,
+      "ufl": 7.5,
+      "flash_pt": -22,
+      "ait": 225,
+      "tags": [
+        "flammable",
+        "liquid"
+      ],
+      "dippr": {
+        "vp": {
+          "eq_type": 100,
+          "A": 104.65,
+          "B": -6995.5,
+          "C": -12.702,
+          "D": 1.2381e-05,
+          "E": 2.0
+        }
+      }
+    },
+    {
+      "name": "n-Heptane",
+      "cas": "142-82-5",
+      "un": 1206,
+      "formula": "C7H16",
+      "mw": 100.204,
+      "nbp": 371.58,
+      "tc": 540.2,
+      "pc": 2740000.0,
+      "vc": 0.000432,
+      "omega": 0.349,
+      "rho_liq": 684.0,
+      "lfl": 1.05,
+      "ufl": 6.7,
+      "flash_pt": -4,
+      "ait": 215,
+      "tags": [
+        "flammable",
+        "liquid"
+      ],
+      "dippr": {
+        "vp": {
+          "eq_type": 100,
+          "A": 87.829,
+          "B": -6996.4,
+          "C": -9.8802,
+          "D": 7.2099e-06,
+          "E": 2.0
+        }
+      }
+    },
+    {
+      "name": "n-Octane",
+      "cas": "111-65-9",
+      "un": 1262,
+      "formula": "C8H18",
+      "mw": 114.231,
+      "nbp": 398.83,
+      "tc": 569.4,
+      "pc": 2490000.0,
+      "vc": 0.000492,
+      "omega": 0.398,
+      "rho_liq": 703.0,
+      "lfl": 0.95,
+      "ufl": 6.5,
+      "flash_pt": 13,
+      "ait": 206,
+      "tags": [
+        "flammable",
+        "liquid"
+      ]
+    },
+    {
+      "name": "n-Decane",
+      "cas": "124-18-5",
+      "un": 2247,
+      "formula": "C10H22",
+      "mw": 142.285,
+      "nbp": 447.3,
+      "tc": 617.7,
+      "pc": 2110000.0,
+      "vc": 0.000624,
+      "omega": 0.49,
+      "rho_liq": 730.0,
+      "lfl": 0.75,
+      "ufl": 5.4,
+      "flash_pt": 46,
+      "ait": 210,
+      "tags": [
+        "flammable",
+        "liquid"
+      ]
+    },
+    {
+      "name": "Hydrogen Sulfide",
+      "cas": "7783-06-4",
+      "un": 1053,
+      "formula": "H2S",
+      "mw": 34.081,
+      "nbp": 212.8,
+      "tc": 373.1,
+      "pc": 9000000.0,
+      "vc": 9.85e-05,
+      "omega": 0.081,
+      "rho_liq": 950.0,
+      "lfl": 4.0,
+      "ufl": 44.0,
+      "flash_pt": -82,
+      "ait": 260,
+      "aegl1_60min": 0.51,
+      "aegl2_60min": 27,
+      "aegl3_60min": 50,
+      "idlh": 100,
+      "toxic_n": 1.9,
+      "probit_a": -31.42,
+      "probit_b": 3.008,
+      "probit_n": 1,
+      "tags": [
+        "toxic",
+        "flammable",
+        "gas"
+      ],
+      "dippr": {
+        "vp": {
+          "eq_type": 100,
+          "A": 68.43,
+          "B": -3670.0,
+          "C": -7.743,
+          "D": 0.011088,
+          "E": 1.0
+        }
+      }
+    },
+    {
+      "name": "Chlorine",
+      "cas": "7782-50-5",
+      "un": 1017,
+      "formula": "Cl2",
+      "mw": 70.906,
+      "nbp": 239.1,
+      "tc": 417.0,
+      "pc": 7991000.0,
+      "vc": 0.000123,
+      "omega": 0.075,
+      "rho_liq": 1563.0,
+      "aegl1_60min": 0.5,
+      "aegl2_60min": 2,
+      "aegl3_60min": 20,
+      "idlh": 10,
+      "toxic_n": 2.75,
+      "probit_a": -17.1,
+      "probit_b": 1.69,
+      "probit_n": 1,
+      "tags": [
+        "toxic",
+        "gas",
+        "oxidizer"
+      ],
+      "dippr": {
+        "vp": {
+          "eq_type": 100,
+          "A": 54.018,
+          "B": -3079.3,
+          "C": -5.0149,
+          "D": 4.481e-06,
+          "E": 2.0
+        }
+      }
+    },
+    {
+      "name": "Ammonia",
+      "cas": "7664-41-7",
+      "un": 1005,
+      "formula": "NH3",
+      "mw": 17.031,
+      "nbp": 239.8,
+      "tc": 405.4,
+      "pc": 11333000.0,
+      "vc": 7.21e-05,
+      "omega": 0.257,
+      "rho_liq": 682.0,
+      "lfl": 15.0,
+      "ufl": 28.0,
+      "flash_pt": 132,
+      "ait": 651,
+      "aegl1_60min": 30,
+      "aegl2_60min": 160,
+      "aegl3_60min": 1100,
+      "idlh": 300,
+      "toxic_n": 2.0,
+      "probit_a": -35.9,
+      "probit_b": 1.85,
+      "probit_n": 1,
+      "tags": [
+        "toxic",
+        "flammable",
+        "gas"
+      ],
+      "dippr": {
+        "vp": {
+          "eq_type": 100,
+          "A": 64.352,
+          "B": -4615.5,
+          "C": -6.4888,
+          "D": 0.00608,
+          "E": 1.0
+        }
+      }
+    },
+    {
+      "name": "Sulfur Dioxide",
+      "cas": "7446-09-5",
+      "un": 1079,
+      "formula": "SO2",
+      "mw": 64.065,
+      "nbp": 263.1,
+      "tc": 430.8,
+      "pc": 7884000.0,
+      "vc": 0.000122,
+      "omega": 0.251,
+      "rho_liq": 1460.0,
+      "aegl1_60min": 0.2,
+      "aegl2_60min": 0.75,
+      "aegl3_60min": 30,
+      "idlh": 100,
+      "toxic_n": 2.4,
+      "probit_a": -19.2,
+      "probit_b": 1.22,
+      "probit_n": 1,
+      "tags": [
+        "toxic",
+        "gas"
+      ],
+      "dippr": {
+        "vp": {
+          "eq_type": 100,
+          "A": 62.928,
+          "B": -4083.1,
+          "C": -6.3639,
+          "D": 0.01296,
+          "E": 1.0
+        }
+      }
+    },
+    {
+      "name": "Nitrogen Dioxide",
+      "cas": "10102-44-0",
+      "un": 1067,
+      "formula": "NO2",
+      "mw": 46.006,
+      "nbp": 294.3,
+      "tc": 431.4,
+      "pc": 10130000.0,
+      "vc": 0.000167,
+      "omega": 0.834,
+      "rho_liq": 1447.0,
+      "aegl1_60min": 0.5,
+      "aegl2_60min": 20,
+      "aegl3_60min": 34,
+      "idlh": 20,
+      "toxic_n": 3.5,
+      "probit_a": -18.6,
+      "probit_b": 0.8,
+      "probit_n": 1,
+      "tags": [
+        "toxic",
+        "gas",
+        "oxidizer"
+      ],
+      "dippr": {
+        "vp": {
+          "eq_type": 100,
+          "A": 73.498,
+          "B": -4681.5,
+          "C": -8.2336,
+          "D": 0.0096116,
+          "E": 1.0
+        }
+      }
+    },
+    {
+      "name": "Hydrogen Fluoride",
+      "cas": "7664-39-3",
+      "un": 1052,
+      "formula": "HF",
+      "mw": 20.006,
+      "nbp": 292.7,
+      "tc": 461.0,
+      "pc": 6480000.0,
+      "vc": 6.9e-05,
+      "omega": 0.374,
+      "rho_liq": 967.0,
+      "aegl1_60min": 1,
+      "aegl2_60min": 24,
+      "aegl3_60min": 44,
+      "idlh": 30,
+      "toxic_n": 1.5,
+      "probit_a": -25.8,
+      "probit_b": 1.3,
+      "probit_n": 1,
+      "tags": [
+        "toxic",
+        "gas",
+        "corrosive"
+      ],
+      "dippr": {
+        "vp": {
+          "eq_type": 100,
+          "A": 56.417,
+          "B": -4454.7,
+          "C": -4.6065,
+          "D": 3.47e-05,
+          "E": 2.0
+        }
+      }
+    },
+    {
+      "name": "Hydrogen Chloride",
+      "cas": "7647-01-0",
+      "un": 1050,
+      "formula": "HCl",
+      "mw": 36.461,
+      "nbp": 188.1,
+      "tc": 324.7,
+      "pc": 8310000.0,
+      "vc": 8.1e-05,
+      "omega": 0.133,
+      "rho_liq": 1190.0,
+      "aegl1_60min": 1.8,
+      "aegl2_60min": 22,
+      "aegl3_60min": 100,
+      "idlh": 50,
+      "toxic_n": 1.0,
+      "probit_a": -21.8,
+      "probit_b": 2.0,
+      "probit_n": 1,
+      "tags": [
+        "toxic",
+        "gas",
+        "corrosive"
+      ],
+      "dippr": {
+        "vp": {
+          "eq_type": 100,
+          "A": 47.737,
+          "B": -2591.4,
+          "C": -4.2803,
+          "D": 4.902e-19,
+          "E": 6.0
+        }
+      }
+    },
+    {
+      "name": "Hydrogen Cyanide",
+      "cas": "74-90-8",
+      "un": 1051,
+      "formula": "HCN",
+      "mw": 27.026,
+      "nbp": 298.9,
+      "tc": 456.8,
+      "pc": 5390000.0,
+      "vc": 0.000139,
+      "omega": 0.41,
+      "rho_liq": 687.0,
+      "lfl": 5.6,
+      "ufl": 40.0,
+      "flash_pt": -18,
+      "ait": 538,
+      "aegl1_60min": 2,
+      "aegl2_60min": 7,
+      "aegl3_60min": 15,
+      "idlh": 50,
+      "toxic_n": 2.7,
+      "probit_a": -29.4,
+      "probit_b": 3.0,
+      "probit_n": 1,
+      "tags": [
+        "toxic",
+        "flammable",
+        "gas"
+      ],
+      "dippr": {
+        "vp": {
+          "eq_type": 100,
+          "A": 63.596,
+          "B": -5212.5,
+          "C": -5.8742,
+          "D": 3.4495e-17,
+          "E": 6.0
+        }
+      }
+    },
+    {
+      "name": "Phosgene",
+      "cas": "75-44-5",
+      "un": 1076,
+      "formula": "COCl2",
+      "mw": 98.916,
+      "nbp": 280.8,
+      "tc": 455.0,
+      "pc": 5670000.0,
+      "vc": 0.00019,
+      "omega": 0.207,
+      "rho_liq": 1380.0,
+      "aegl1_60min": 0.3,
+      "aegl2_60min": 0.6,
+      "aegl3_60min": 3.6,
+      "idlh": 2,
+      "toxic_n": 1.0,
+      "probit_a": -10.6,
+      "probit_b": 2.0,
+      "probit_n": 1,
+      "tags": [
+        "toxic",
+        "gas"
+      ],
+      "dippr": {
+        "vp": {
+          "eq_type": 100,
+          "A": 57.257,
+          "B": -4057.1,
+          "C": -5.2149,
+          "D": 4.059e-06,
+          "E": 2.0
+        }
+      }
+    },
+    {
+      "name": "Carbon Monoxide",
+      "cas": "630-08-0",
+      "un": 1016,
+      "formula": "CO",
+      "mw": 28.01,
+      "nbp": 81.6,
+      "tc": 132.9,
+      "pc": 3494000.0,
+      "vc": 9.38e-05,
+      "omega": 0.045,
+      "rho_liq": 791.0,
+      "lfl": 12.5,
+      "ufl": 74.0,
+      "flash_pt": -191,
+      "ait": 609,
+      "aegl1_60min": null,
+      "aegl2_60min": 420,
+      "aegl3_60min": 1700,
+      "idlh": 1200,
+      "toxic_n": 1.0,
+      "probit_a": -37.98,
+      "probit_b": 3.7,
+      "probit_n": 1,
+      "tags": [
+        "toxic",
+        "flammable",
+        "gas"
+      ],
+      "dippr": {
+        "vp": {
+          "eq_type": 100,
+          "A": 34.642,
+          "B": -705.57,
+          "C": -3.0213,
+          "D": 1.6405e-16,
+          "E": 6.0
+        }
+      }
+    },
+    {
+      "name": "Ethylene",
+      "cas": "74-85-1",
+      "un": 1962,
+      "formula": "C2H4",
+      "mw": 28.054,
+      "nbp": 169.4,
+      "tc": 282.34,
+      "pc": 5041000.0,
+      "vc": 0.0001314,
+      "omega": 0.089,
+      "rho_liq": 567.0,
+      "lfl": 2.7,
+      "ufl": 36.0,
+      "flash_pt": -136,
+      "ait": 490,
+      "tags": [
+        "flammable",
+        "gas"
+      ],
+      "dippr": {
+        "vp": {
+          "eq_type": 100,
+          "A": 47.726,
+          "B": -2198.2,
+          "C": -4.5647,
+          "D": 0.0068626,
+          "E": 1.0
+        }
+      }
+    },
+    {
+      "name": "Propylene",
+      "cas": "115-07-1",
+      "un": 1077,
+      "formula": "C3H6",
+      "mw": 42.08,
+      "nbp": 225.5,
+      "tc": 365.6,
+      "pc": 4665000.0,
+      "vc": 0.0001813,
+      "omega": 0.142,
+      "rho_liq": 609.0,
+      "lfl": 2.0,
+      "ufl": 11.1,
+      "flash_pt": -108,
+      "ait": 455,
+      "tags": [
+        "flammable",
+        "gas"
+      ],
+      "dippr": {
+        "vp": {
+          "eq_type": 100,
+          "A": 49.806,
+          "B": -2854.9,
+          "C": -4.7635,
+          "D": 5.5121e-06,
+          "E": 2.0
+        }
+      }
+    },
+    {
+      "name": "1,3-Butadiene",
+      "cas": "106-99-0",
+      "un": 1010,
+      "formula": "C4H6",
+      "mw": 54.092,
+      "nbp": 268.6,
+      "tc": 425.0,
+      "pc": 4330000.0,
+      "vc": 0.000221,
+      "omega": 0.19,
+      "rho_liq": 650.0,
+      "lfl": 2.0,
+      "ufl": 12.0,
+      "flash_pt": -76,
+      "ait": 414,
+      "tags": [
+        "flammable",
+        "gas",
+        "toxic"
+      ]
+    },
+    {
+      "name": "Benzene",
+      "cas": "71-43-2",
+      "un": 1114,
+      "formula": "C6H6",
+      "mw": 78.114,
+      "nbp": 353.2,
+      "tc": 562.0,
+      "pc": 4894000.0,
+      "vc": 0.000259,
+      "omega": 0.21,
+      "rho_liq": 876.0,
+      "lfl": 1.2,
+      "ufl": 7.8,
+      "flash_pt": -11,
+      "ait": 498,
+      "aegl1_60min": 52,
+      "aegl2_60min": 800,
+      "aegl3_60min": 4000,
+      "idlh": 500,
+      "toxic_n": 2.0,
+      "probit_a": -109.8,
+      "probit_b": 5.3,
+      "probit_n": 1,
+      "tags": [
+        "flammable",
+        "liquid",
+        "toxic"
+      ],
+      "dippr": {
+        "vp": {
+          "eq_type": 100,
+          "A": 83.107,
+          "B": -6486.2,
+          "C": -9.2194,
+          "D": 6.9844e-06,
+          "E": 2.0
+        }
+      }
+    },
+    {
+      "name": "Toluene",
+      "cas": "108-88-3",
+      "un": 1294,
+      "formula": "C7H8",
+      "mw": 92.141,
+      "nbp": 383.8,
+      "tc": 591.8,
+      "pc": 4108000.0,
+      "vc": 0.000316,
+      "omega": 0.263,
+      "rho_liq": 867.0,
+      "lfl": 1.1,
+      "ufl": 7.1,
+      "flash_pt": 4,
+      "ait": 480,
+      "aegl1_60min": 50,
+      "aegl2_60min": 300,
+      "aegl3_60min": 3700,
+      "idlh": 500,
+      "tags": [
+        "flammable",
+        "liquid",
+        "toxic"
+      ],
+      "dippr": {
+        "vp": {
+          "eq_type": 100,
+          "A": 76.945,
+          "B": -6729.8,
+          "C": -8.179,
+          "D": 5.3017e-06,
+          "E": 2.0
+        }
+      }
+    },
+    {
+      "name": "o-Xylene",
+      "cas": "95-47-6",
+      "un": 1307,
+      "formula": "C8H10",
+      "mw": 106.167,
+      "nbp": 417.6,
+      "tc": 630.3,
+      "pc": 3734000.0,
+      "vc": 0.000369,
+      "omega": 0.31,
+      "rho_liq": 880.0,
+      "lfl": 0.9,
+      "ufl": 7.0,
+      "flash_pt": 17,
+      "ait": 463,
+      "tags": [
+        "flammable",
+        "liquid",
+        "toxic"
+      ]
+    },
+    {
+      "name": "Methanol",
+      "cas": "67-56-1",
+      "un": 1230,
+      "formula": "CH4O",
+      "mw": 32.042,
+      "nbp": 337.8,
+      "tc": 512.6,
+      "pc": 8100000.0,
+      "vc": 0.000118,
+      "omega": 0.559,
+      "rho_liq": 791.0,
+      "lfl": 6.0,
+      "ufl": 36.0,
+      "flash_pt": 12,
+      "ait": 464,
+      "aegl1_60min": 670,
+      "aegl2_60min": 5300,
+      "aegl3_60min": 14000,
+      "idlh": 6000,
+      "tags": [
+        "flammable",
+        "liquid",
+        "toxic"
+      ],
+      "dippr": {
+        "vp": {
+          "eq_type": 100,
+          "A": 81.768,
+          "B": -6876.0,
+          "C": -8.7078,
+          "D": 7.1926e-06,
+          "E": 2.0
+        }
+      }
+    },
+    {
+      "name": "Ethanol",
+      "cas": "64-17-5",
+      "un": 1170,
+      "formula": "C2H6O",
+      "mw": 46.069,
+      "nbp": 351.5,
+      "tc": 514.0,
+      "pc": 6137000.0,
+      "vc": 0.000167,
+      "omega": 0.644,
+      "rho_liq": 789.0,
+      "lfl": 3.3,
+      "ufl": 19.0,
+      "flash_pt": 13,
+      "ait": 363,
+      "tags": [
+        "flammable",
+        "liquid"
+      ],
+      "dippr": {
+        "vp": {
+          "eq_type": 100,
+          "A": 73.304,
+          "B": -7122.3,
+          "C": -7.1424,
+          "D": 2.8853e-06,
+          "E": 2.0
+        }
+      }
+    },
+    {
+      "name": "Acetone",
+      "cas": "67-64-1",
+      "un": 1090,
+      "formula": "C3H6O",
+      "mw": 58.08,
+      "nbp": 329.4,
+      "tc": 508.1,
+      "pc": 4700000.0,
+      "vc": 0.000209,
+      "omega": 0.304,
+      "rho_liq": 790.0,
+      "lfl": 2.6,
+      "ufl": 12.8,
+      "flash_pt": -17,
+      "ait": 465,
+      "tags": [
+        "flammable",
+        "liquid"
+      ],
+      "dippr": {
+        "vp": {
+          "eq_type": 100,
+          "A": 69.006,
+          "B": -5599.6,
+          "C": -7.0985,
+          "D": 6.2237e-06,
+          "E": 2.0
+        }
+      }
+    },
+    {
+      "name": "Methyl Ethyl Ketone",
+      "cas": "78-93-3",
+      "un": 1193,
+      "formula": "C4H8O",
+      "mw": 72.107,
+      "nbp": 352.8,
+      "tc": 536.8,
+      "pc": 4210000.0,
+      "vc": 0.000267,
+      "omega": 0.322,
+      "rho_liq": 805.0,
+      "lfl": 1.8,
+      "ufl": 11.5,
+      "flash_pt": -6,
+      "ait": 404,
+      "tags": [
+        "flammable",
+        "liquid"
+      ],
+      "dippr": {
+        "vp": {
+          "eq_type": 100,
+          "A": 69.987,
+          "B": -6025.6,
+          "C": -6.9981,
+          "D": 3.8366e-17,
+          "E": 6.0
+        }
+      }
+    },
+    {
+      "name": "Sulfuric Acid",
+      "cas": "7664-93-9",
+      "un": 1830,
+      "formula": "H2SO4",
+      "mw": 98.079,
+      "nbp": 610.0,
+      "tc": 924.0,
+      "pc": 6400000.0,
+      "vc": null,
+      "omega": 0.544,
+      "rho_liq": 1840.0,
+      "aegl1_60min": 0.2,
+      "aegl2_60min": 8.7,
+      "aegl3_60min": 160,
+      "idlh": 15,
+      "tags": [
+        "toxic",
+        "liquid",
+        "corrosive"
+      ]
+    },
+    {
+      "name": "Nitric Acid",
+      "cas": "7697-37-2",
+      "un": 2031,
+      "formula": "HNO3",
+      "mw": 63.013,
+      "nbp": 356.0,
+      "tc": 520.0,
+      "pc": 6890000.0,
+      "vc": null,
+      "omega": 0.42,
+      "rho_liq": 1510.0,
+      "aegl1_60min": 0.16,
+      "aegl2_60min": 24,
+      "aegl3_60min": 92,
+      "idlh": 25,
+      "tags": [
+        "toxic",
+        "liquid",
+        "corrosive",
+        "oxidizer"
+      ]
+    },
+    {
+      "name": "Sodium Hydroxide (50%)",
+      "cas": "1310-73-2",
+      "un": 1824,
+      "formula": "NaOH",
+      "mw": 40.0,
+      "nbp": 1661.0,
+      "tc": null,
+      "pc": null,
+      "vc": null,
+      "omega": 0.0,
+      "rho_liq": 1525.0,
+      "tags": [
+        "toxic",
+        "liquid",
+        "corrosive"
+      ]
+    },
+    {
+      "name": "Carbon Dioxide",
+      "cas": "124-38-9",
+      "un": 1013,
+      "formula": "CO2",
+      "mw": 44.01,
+      "nbp": null,
+      "tc": 304.13,
+      "pc": 7377000.0,
+      "vc": 9.41e-05,
+      "omega": 0.225,
+      "rho_liq": 777.0,
+      "aegl1_60min": null,
+      "aegl2_60min": 30000,
+      "aegl3_60min": 40000,
+      "tags": [
+        "gas",
+        "asphyxiant"
+      ],
+      "dippr": {
+        "vp": {
+          "eq_type": 100,
+          "A": 85.495,
+          "B": -4169.8,
+          "C": -12.477,
+          "D": 1.5642e-05,
+          "E": 2.0
+        }
+      }
+    },
+    {
+      "name": "Nitrogen",
+      "cas": "7727-37-9",
+      "un": 1066,
+      "formula": "N2",
+      "mw": 28.013,
+      "nbp": 77.35,
+      "tc": 126.2,
+      "pc": 3400000.0,
+      "vc": 8.95e-05,
+      "omega": 0.037,
+      "rho_liq": 808.6,
+      "tags": [
+        "gas",
+        "inert"
+      ],
+      "dippr": {
+        "vp": {
+          "eq_type": 100,
+          "A": 33.847,
+          "B": -638.28,
+          "C": -2.9781,
+          "D": 1.6722e-17,
+          "E": 6.0
+        }
+      }
+    },
+    {
+      "name": "Oxygen",
+      "cas": "7782-44-7",
+      "un": 1072,
+      "formula": "O2",
+      "mw": 31.999,
+      "nbp": 90.2,
+      "tc": 154.58,
+      "pc": 5043000.0,
+      "vc": 7.34e-05,
+      "omega": 0.022,
+      "rho_liq": 1141.0,
+      "tags": [
+        "gas",
+        "oxidizer"
+      ],
+      "dippr": {
+        "vp": {
+          "eq_type": 100,
+          "A": 34.883,
+          "B": -723.72,
+          "C": -3.1634,
+          "D": 3.5735e-17,
+          "E": 6.0
+        }
+      }
+    },
+    {
+      "name": "Hydrogen",
+      "cas": "1333-74-0",
+      "un": 1049,
+      "formula": "H2",
+      "mw": 2.016,
+      "nbp": 20.27,
+      "tc": 32.97,
+      "pc": 1293000.0,
+      "vc": 6.47e-05,
+      "omega": -0.22,
+      "rho_liq": 70.8,
+      "lfl": 4.0,
+      "ufl": 75.0,
+      "flash_pt": -253,
+      "ait": 500,
+      "tags": [
+        "flammable",
+        "gas"
+      ],
+      "dippr": {
+        "vp": {
+          "eq_type": 100,
+          "A": 13.633,
+          "B": -164.9,
+          "C": 3.19,
+          "D": 0.0,
+          "E": 0.0
+        }
+      }
+    },
+    {
+      "name": "Helium",
+      "cas": "7440-59-7",
+      "un": 1046,
+      "formula": "He",
+      "mw": 4.003,
+      "nbp": 4.22,
+      "tc": 5.19,
+      "pc": 227000.0,
+      "vc": 5.73e-05,
+      "omega": -0.39,
+      "rho_liq": 124.9,
+      "tags": [
+        "gas",
+        "inert"
+      ]
+    },
+    {
+      "name": "Isopentane",
+      "cas": "78-78-4",
+      "un": 1265,
+      "formula": "C5H12",
+      "mw": 72.15,
+      "nbp": 301.0,
+      "tc": 460.4,
+      "pc": 3384000.0,
+      "vc": 0.000308,
+      "omega": 0.228,
+      "rho_liq": 620.0,
+      "lfl": 1.4,
+      "ufl": 7.6,
+      "flash_pt": -51,
+      "ait": 420,
+      "tags": [
+        "flammable",
+        "liquid"
+      ],
+      "dippr": {
+        "vp": {
+          "eq_type": 100,
+          "A": 64.804,
+          "B": -4565.9,
+          "C": -6.5892,
+          "D": 5.6898e-06,
+          "E": 2.0
+        }
+      }
+    },
+    {
+      "name": "Cyclohexane",
+      "cas": "110-82-7",
+      "un": 1145,
+      "formula": "C6H12",
+      "mw": 84.161,
+      "nbp": 353.9,
+      "tc": 553.8,
+      "pc": 4080000.0,
+      "vc": 0.000308,
+      "omega": 0.208,
+      "rho_liq": 779.0,
+      "lfl": 1.3,
+      "ufl": 8.0,
+      "flash_pt": -18,
+      "ait": 245,
+      "tags": [
+        "flammable",
+        "liquid"
+      ]
+    },
+    {
+      "name": "Styrene",
+      "cas": "100-42-5",
+      "un": 2055,
+      "formula": "C8H8",
+      "mw": 104.152,
+      "nbp": 418.3,
+      "tc": 636.0,
+      "pc": 3840000.0,
+      "vc": 0.000352,
+      "omega": 0.29,
+      "rho_liq": 906.0,
+      "lfl": 0.9,
+      "ufl": 6.8,
+      "flash_pt": 31,
+      "ait": 490,
+      "tags": [
+        "flammable",
+        "liquid",
+        "toxic"
+      ]
+    },
+    {
+      "name": "Vinyl Chloride",
+      "cas": "75-01-4",
+      "un": 1086,
+      "formula": "C2H3Cl",
+      "mw": 62.499,
+      "nbp": 259.8,
+      "tc": 432.0,
+      "pc": 5600000.0,
+      "vc": 0.000169,
+      "omega": 0.107,
+      "rho_liq": 911.0,
+      "lfl": 3.6,
+      "ufl": 33.0,
+      "flash_pt": -78,
+      "ait": 472,
+      "aegl1_60min": 250,
+      "aegl2_60min": 1200,
+      "aegl3_60min": 4800,
+      "idlh": null,
+      "tags": [
+        "flammable",
+        "gas",
+        "toxic",
+        "carcinogen"
+      ]
+    },
+    {
+      "name": "Acrylonitrile",
+      "cas": "107-13-1",
+      "un": 1093,
+      "formula": "C3H3N",
+      "mw": 53.064,
+      "nbp": 350.5,
+      "tc": 540.0,
+      "pc": 4560000.0,
+      "vc": 0.000211,
+      "omega": 0.35,
+      "rho_liq": 806.0,
+      "lfl": 3.0,
+      "ufl": 17.0,
+      "flash_pt": -1,
+      "ait": 481,
+      "aegl1_60min": 22,
+      "aegl2_60min": 70,
+      "aegl3_60min": 250,
+      "idlh": 85,
+      "tags": [
+        "flammable",
+        "liquid",
+        "toxic",
+        "carcinogen"
+      ]
+    },
+    {
+      "name": "Ethylene Oxide",
+      "cas": "75-21-8",
+      "un": 1040,
+      "formula": "C2H4O",
+      "mw": 44.053,
+      "nbp": 283.6,
+      "tc": 469.0,
+      "pc": 7190000.0,
+      "vc": 0.000141,
+      "omega": 0.206,
+      "rho_liq": 882.0,
+      "lfl": 3.0,
+      "ufl": 100.0,
+      "flash_pt": -29,
+      "ait": 429,
+      "aegl1_60min": 5,
+      "aegl2_60min": 45,
+      "aegl3_60min": 200,
+      "idlh": 800,
+      "tags": [
+        "flammable",
+        "gas",
+        "toxic",
+        "carcinogen"
+      ]
+    },
+    {
+      "name": "Acetaldehyde",
+      "cas": "75-07-0",
+      "un": 1089,
+      "formula": "C2H4O",
+      "mw": 44.053,
+      "nbp": 294.0,
+      "tc": 461.0,
+      "pc": 5570000.0,
+      "vc": 0.000154,
+      "omega": 0.341,
+      "rho_liq": 778.0,
+      "lfl": 4.0,
+      "ufl": 60.0,
+      "flash_pt": -38,
+      "ait": 175,
+      "tags": [
+        "flammable",
+        "liquid",
+        "toxic"
+      ]
+    },
+    {
+      "name": "Acrolein",
+      "cas": "107-02-8",
+      "un": 1092,
+      "formula": "C3H4O",
+      "mw": 56.064,
+      "nbp": 325.9,
+      "tc": 506.0,
+      "pc": 5160000.0,
+      "vc": 0.000197,
+      "omega": 0.33,
+      "rho_liq": 839.0,
+      "lfl": 2.8,
+      "ufl": 31.0,
+      "flash_pt": -26,
+      "ait": 234,
+      "aegl1_60min": 0.03,
+      "aegl2_60min": 0.44,
+      "aegl3_60min": 6.8,
+      "idlh": 2,
+      "tags": [
+        "flammable",
+        "liquid",
+        "toxic"
+      ]
+    },
+    {
+      "name": "Epichlorohydrin",
+      "cas": "106-89-8",
+      "un": 2023,
+      "formula": "C3H5ClO",
+      "mw": 92.525,
+      "nbp": 389.0,
+      "tc": 620.0,
+      "pc": 4950000.0,
+      "vc": null,
+      "omega": 0.3,
+      "rho_liq": 1180.0,
+      "lfl": 3.8,
+      "ufl": 21.0,
+      "flash_pt": 31,
+      "ait": 385,
+      "aegl1_60min": 1.7,
+      "aegl2_60min": 53,
+      "aegl3_60min": 150,
+      "tags": [
+        "flammable",
+        "liquid",
+        "toxic"
+      ]
+    },
+    {
+      "name": "Formaldehyde",
+      "cas": "50-00-0",
+      "un": 1198,
+      "formula": "CH2O",
+      "mw": 30.026,
+      "nbp": 254.0,
+      "tc": 408.0,
+      "pc": 6590000.0,
+      "vc": null,
+      "omega": 0.282,
+      "rho_liq": 815.0,
+      "lfl": 7.0,
+      "ufl": 73.0,
+      "flash_pt": 64,
+      "ait": 430,
+      "aegl1_60min": 0.9,
+      "aegl2_60min": 17,
+      "aegl3_60min": 56,
+      "idlh": 20,
+      "tags": [
+        "flammable",
+        "gas",
+        "toxic",
+        "carcinogen"
+      ]
+    },
+    {
+      "name": "1,2-Dichloroethane",
+      "cas": "107-06-2",
+      "un": 1184,
+      "formula": "C2H4Cl2",
+      "mw": 98.96,
+      "nbp": 356.6,
+      "tc": 561.0,
+      "pc": 5370000.0,
+      "vc": 0.000225,
+      "omega": 0.29,
+      "rho_liq": 1235.0,
+      "lfl": 6.2,
+      "ufl": 16.0,
+      "flash_pt": 13,
+      "ait": 413,
+      "aegl1_60min": 50,
+      "aegl2_60min": 200,
+      "aegl3_60min": 800,
+      "tags": [
+        "flammable",
+        "liquid",
+        "toxic",
+        "carcinogen"
+      ]
+    },
+    {
+      "name": "Methyl Chloride",
+      "cas": "74-87-3",
+      "un": 1063,
+      "formula": "CH3Cl",
+      "mw": 50.488,
+      "nbp": 248.9,
+      "tc": 416.2,
+      "pc": 6680000.0,
+      "vc": 0.000139,
+      "omega": 0.156,
+      "rho_liq": 916.0,
+      "lfl": 8.1,
+      "ufl": 17.4,
+      "flash_pt": -46,
+      "ait": 632,
+      "tags": [
+        "flammable",
+        "gas",
+        "toxic"
+      ]
+    },
+    {
+      "name": "Carbon Disulfide",
+      "cas": "75-15-0",
+      "un": 1131,
+      "formula": "CS2",
+      "mw": 76.143,
+      "nbp": 319.4,
+      "tc": 552.0,
+      "pc": 7900000.0,
+      "vc": 0.000173,
+      "omega": 0.109,
+      "rho_liq": 1263.0,
+      "lfl": 1.0,
+      "ufl": 50.0,
+      "flash_pt": -30,
+      "ait": 90,
+      "aegl1_60min": 17,
+      "aegl2_60min": 320,
+      "aegl3_60min": 960,
+      "idlh": 500,
+      "tags": [
+        "flammable",
+        "liquid",
+        "toxic"
+      ]
+    },
+    {
+      "name": "R-134a",
+      "cas": "811-97-2",
+      "un": 3159,
+      "formula": "C2H2F4",
+      "mw": 102.03,
+      "nbp": 247.1,
+      "tc": 374.21,
+      "pc": 4059000.0,
+      "vc": 0.0001994,
+      "omega": 0.327,
+      "rho_liq": 1206.0,
+      "lfl": null,
+      "ufl": null,
+      "tags": [
+        "gas",
+        "refrigerant"
+      ],
+      "dippr": {
+        "vp": {
+          "eq_type": 100,
+          "A": 56.795,
+          "B": -3425.9,
+          "C": -5.3659,
+          "D": 3.3419e-06,
+          "E": 2.0
+        }
+      }
+    },
+    {
+      "name": "R-22",
+      "cas": "75-45-6",
+      "un": 1018,
+      "formula": "CHClF2",
+      "mw": 86.468,
+      "nbp": 232.3,
+      "tc": 369.3,
+      "pc": 4990000.0,
+      "vc": 0.000166,
+      "omega": 0.215,
+      "rho_liq": 1194.0,
+      "lfl": null,
+      "ufl": null,
+      "tags": [
+        "gas",
+        "refrigerant"
+      ]
+    },
+    {
+      "name": "R-32",
+      "cas": "75-10-5",
+      "un": 3252,
+      "formula": "CH2F2",
+      "mw": 52.024,
+      "nbp": 221.5,
+      "tc": 351.26,
+      "pc": 5782000.0,
+      "vc": 0.000124,
+      "omega": 0.277,
+      "rho_liq": 960.0,
+      "lfl": 14.0,
+      "ufl": 31.0,
+      "tags": [
+        "flammable",
+        "gas",
+        "refrigerant"
+      ]
+    },
+    {
+      "name": "Aniline",
+      "cas": "62-53-3",
+      "un": 1547,
+      "formula": "C6H7N",
+      "mw": 93.128,
+      "nbp": 457.6,
+      "tc": 699.0,
+      "pc": 5300000.0,
+      "vc": 0.000292,
+      "omega": 0.38,
+      "rho_liq": 1021.7,
+      "lfl": 1.3,
+      "ufl": 11.0,
+      "flash_pt": 70,
+      "ait": 615,
+      "tags": [
+        "toxic",
+        "liquid"
+      ]
+    },
+    {
+      "name": "Phenol",
+      "cas": "108-95-2",
+      "un": 1671,
+      "formula": "C6H6O",
+      "mw": 94.113,
+      "nbp": 455.0,
+      "tc": 694.2,
+      "pc": 6130000.0,
+      "vc": 0.000229,
+      "omega": 0.424,
+      "rho_liq": 1057.0,
+      "lfl": 1.8,
+      "ufl": 8.6,
+      "flash_pt": 79,
+      "ait": 715,
+      "tags": [
+        "toxic",
+        "liquid",
+        "corrosive"
+      ]
+    },
+    {
+      "name": "Nitrobenzene",
+      "cas": "98-95-3",
+      "un": 1662,
+      "formula": "C6H5NO2",
+      "mw": 123.111,
+      "nbp": 484.0,
+      "tc": 720.0,
+      "pc": 4200000.0,
+      "vc": 0.000356,
+      "omega": 0.42,
+      "rho_liq": 1203.0,
+      "lfl": 1.8,
+      "ufl": 40.0,
+      "flash_pt": 88,
+      "ait": 480,
+      "tags": [
+        "toxic",
+        "liquid"
+      ]
+    },
+    {
+      "name": "Diethyl Ether",
+      "cas": "60-29-7",
+      "un": 1155,
+      "formula": "C4H10O",
+      "mw": 74.123,
+      "nbp": 307.8,
+      "tc": 466.7,
+      "pc": 3640000.0,
+      "vc": 0.00028,
+      "omega": 0.281,
+      "rho_liq": 713.0,
+      "lfl": 1.9,
+      "ufl": 36.0,
+      "flash_pt": -45,
+      "ait": 160,
+      "tags": [
+        "flammable",
+        "liquid"
+      ]
+    },
+    {
+      "name": "Tetrahydrofuran",
+      "cas": "109-99-9",
+      "un": 2056,
+      "formula": "C4H8O",
+      "mw": 72.107,
+      "nbp": 339.1,
+      "tc": 540.2,
+      "pc": 5190000.0,
+      "vc": 0.000224,
+      "omega": 0.216,
+      "rho_liq": 889.0,
+      "lfl": 2.0,
+      "ufl": 11.8,
+      "flash_pt": -14,
+      "ait": 321,
+      "tags": [
+        "flammable",
+        "liquid"
+      ]
+    },
+    {
+      "name": "Acetic Acid",
+      "cas": "64-19-7",
+      "un": 2789,
+      "formula": "C2H4O2",
+      "mw": 60.052,
+      "nbp": 391.2,
+      "tc": 591.95,
+      "pc": 5786000.0,
+      "vc": 0.000171,
+      "omega": 0.454,
+      "rho_liq": 1049.0,
+      "lfl": 4.0,
+      "ufl": 19.9,
+      "flash_pt": 39,
+      "ait": 463,
+      "tags": [
+        "flammable",
+        "liquid",
+        "corrosive"
+      ]
+    },
+    {
+      "name": "Acrylic Acid",
+      "cas": "79-10-7",
+      "un": 2218,
+      "formula": "C3H4O2",
+      "mw": 72.063,
+      "nbp": 414.0,
+      "tc": 615.0,
+      "pc": 5660000.0,
+      "vc": 0.000208,
+      "omega": 0.56,
+      "rho_liq": 1051.0,
+      "lfl": 2.4,
+      "ufl": 8.0,
+      "flash_pt": 50,
+      "ait": 438,
+      "tags": [
+        "flammable",
+        "liquid",
+        "corrosive"
+      ]
+    },
+    {
+      "name": "Methyl Methacrylate",
+      "cas": "80-62-6",
+      "un": 1247,
+      "formula": "C5H8O2",
+      "mw": 100.117,
+      "nbp": 373.0,
+      "tc": 564.0,
+      "pc": 3770000.0,
+      "vc": 0.000338,
+      "omega": 0.28,
+      "rho_liq": 940.0,
+      "lfl": 1.7,
+      "ufl": 8.2,
+      "flash_pt": 10,
+      "ait": 421,
+      "tags": [
+        "flammable",
+        "liquid"
+      ]
+    },
+    {
+      "name": "Maleic Anhydride",
+      "cas": "108-31-6",
+      "un": 2215,
+      "formula": "C4H2O3",
+      "mw": 98.057,
+      "nbp": 475.0,
+      "tc": 653.0,
+      "pc": 5210000.0,
+      "vc": null,
+      "omega": 0.52,
+      "rho_liq": 1480.0,
+      "lfl": 1.4,
+      "ufl": 7.1,
+      "flash_pt": 102,
+      "ait": 477,
+      "tags": [
+        "toxic",
+        "solid",
+        "corrosive"
+      ]
+    },
+    {
+      "name": "Phthalic Anhydride",
+      "cas": "85-44-9",
+      "un": 2214,
+      "formula": "C8H4O3",
+      "mw": 148.117,
+      "nbp": 558.0,
+      "tc": 780.0,
+      "pc": 3400000.0,
+      "vc": null,
+      "omega": 0.6,
+      "rho_liq": 1530.0,
+      "lfl": 1.7,
+      "ufl": 10.5,
+      "flash_pt": 152,
+      "ait": 569,
+      "tags": [
+        "toxic",
+        "solid"
+      ]
+    },
+    {
+      "name": "Dimethylformamide",
+      "cas": "68-12-2",
+      "un": 2265,
+      "formula": "C3H7NO",
+      "mw": 73.095,
+      "nbp": 426.0,
+      "tc": 647.0,
+      "pc": 4200000.0,
+      "vc": null,
+      "omega": 0.33,
+      "rho_liq": 944.0,
+      "lfl": 2.2,
+      "ufl": 15.2,
+      "flash_pt": 58,
+      "ait": 445,
+      "tags": [
+        "flammable",
+        "liquid",
+        "toxic"
+      ]
+    },
+    {
+      "name": "Hydrazine",
+      "cas": "302-01-2",
+      "un": 2029,
+      "formula": "N2H4",
+      "mw": 32.045,
+      "nbp": 386.5,
+      "tc": 653.0,
+      "pc": 14700000.0,
+      "vc": 9.6e-05,
+      "omega": 0.315,
+      "rho_liq": 1008.0,
+      "lfl": 4.7,
+      "ufl": 100.0,
+      "flash_pt": 38,
+      "ait": 270,
+      "aegl1_60min": 0.1,
+      "aegl2_60min": 5,
+      "aegl3_60min": 30,
+      "idlh": 50,
+      "tags": [
+        "flammable",
+        "liquid",
+        "toxic",
+        "carcinogen"
+      ]
+    },
+    {
+      "name": "Methyl Isocyanate",
+      "cas": "624-83-9",
+      "un": 2480,
+      "formula": "C2H3NO",
+      "mw": 57.052,
+      "nbp": 312.0,
+      "tc": 491.0,
+      "pc": 5550000.0,
+      "vc": null,
+      "omega": 0.22,
+      "rho_liq": 923.0,
+      "lfl": 5.3,
+      "ufl": 26.0,
+      "flash_pt": -7,
+      "ait": 517,
+      "aegl1_60min": 0.025,
+      "aegl2_60min": 0.25,
+      "aegl3_60min": 5,
+      "idlh": 3,
+      "tags": [
+        "flammable",
+        "liquid",
+        "toxic"
+      ]
+    },
+    {
+      "name": "Phosphine",
+      "cas": "7803-51-2",
+      "un": 2199,
+      "formula": "PH3",
+      "mw": 33.998,
+      "nbp": 185.4,
+      "tc": 324.5,
+      "pc": 6540000.0,
+      "vc": 0.000113,
+      "omega": 0.049,
+      "rho_liq": 740.0,
+      "lfl": 1.6,
+      "ufl": 98.0,
+      "aegl1_60min": 1,
+      "aegl2_60min": 4,
+      "aegl3_60min": 10,
+      "idlh": 50,
+      "tags": [
+        "toxic",
+        "flammable",
+        "gas"
+      ]
+    },
+    {
+      "name": "Arsine",
+      "cas": "7784-42-1",
+      "un": 2188,
+      "formula": "AsH3",
+      "mw": 77.946,
+      "nbp": 210.7,
+      "tc": 373.0,
+      "pc": 6450000.0,
+      "vc": null,
+      "omega": 0.1,
+      "rho_liq": 1640.0,
+      "lfl": 5.1,
+      "ufl": 78.0,
+      "aegl1_60min": null,
+      "aegl2_60min": 0.5,
+      "aegl3_60min": 1.5,
+      "idlh": 3,
+      "tags": [
+        "toxic",
+        "flammable",
+        "gas"
+      ]
+    },
+    {
+      "name": "Silane",
+      "cas": "7803-62-5",
+      "un": 2203,
+      "formula": "SiH4",
+      "mw": 32.117,
+      "nbp": 161.0,
+      "tc": 269.7,
+      "pc": 4840000.0,
+      "vc": null,
+      "omega": 0.1,
+      "rho_liq": 680.0,
+      "lfl": 1.4,
+      "ufl": 96.0,
+      "ait": 21,
+      "tags": [
+        "flammable",
+        "gas",
+        "pyrophoric"
+      ]
+    },
+    {
+      "name": "Dichlorosilane",
+      "cas": "4109-96-0",
+      "un": 2189,
+      "formula": "H2Cl2Si",
+      "mw": 101.007,
+      "nbp": 281.4,
+      "tc": 449.0,
+      "pc": 4670000.0,
+      "vc": null,
+      "omega": 0.22,
+      "rho_liq": 1220.0,
+      "lfl": 4.1,
+      "ufl": 98.8,
+      "flash_pt": -37,
+      "ait": 58,
+      "tags": [
+        "flammable",
+        "gas",
+        "toxic",
+        "corrosive"
+      ]
+    },
+    {
+      "name": "1,3-Pentadiene",
+      "cas": "504-60-9",
+      "un": 2847,
+      "formula": "C5H8",
+      "mw": 68.119,
+      "nbp": 315.2,
+      "tc": 498.0,
+      "pc": 3785000.0,
+      "vc": null,
+      "omega": 0.19,
+      "rho_liq": 683.0,
+      "lfl": 1.5,
+      "ufl": 8.7,
+      "flash_pt": -29,
+      "ait": 274,
+      "tags": [
+        "flammable",
+        "liquid"
+      ]
+    }
+  ]
+}
