@@ -69,6 +69,8 @@ class DIPPRParams:
         t_min: Minimum temperature validity [K].
         t_max: Maximum temperature validity [K].
         units: Output units (e.g., 'Pa', 'kmol/m³', 'J/(kmol·K)').
+        tc: Critical temperature [K] — required for eq_106/107 where
+            Tr = T/Tc appears. If 0, falls back to t_max.
     """
     eq_type: int
     A: float = 0.0
@@ -79,6 +81,7 @@ class DIPPRParams:
     t_min: float = 0.0
     t_max: float = 10000.0
     units: str = ""
+    tc: float = 0.0  # critical temperature for Tr in eq_106
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "DIPPRParams":
@@ -93,6 +96,7 @@ class DIPPRParams:
             t_min=data.get('t_min', 0.0),
             t_max=data.get('t_max', 10000.0),
             units=data.get('units', ''),
+            tc=data.get('tc', 0.0),
         )
 
     @classmethod
@@ -195,17 +199,18 @@ def _eq_105(params: DIPPRParams, T: float) -> float:
 def _eq_106(params: DIPPRParams, T: float) -> float:
     """DIPPR 106: Y = A·(1 - Tr)^(B + C·Tr + D·Tr² + E·Tr³).
 
-    Tr = T/Tc (C parameter = Tc).
+    Tr = T/Tc where Tc comes from params.tc (or falls back to t_max).
+    C is a coefficient in the exponent, NOT Tc.
     Used for saturated liquid density, surface tension, Hvap.
     """
     A, B, C, D, E = params.A, params.B, params.C, params.D, params.E
-    # C = Tc in this form
-    Tc = C
+    # Tc from dedicated field; fall back to t_max for backward compat
+    Tc = params.tc if params.tc > EPSILON else params.t_max
     if Tc <= EPSILON:
         return 0.0
     Tr = T / Tc
-    if Tr >= 1.0:
-        return 0.0  # Above critical point
+    if Tr >= 1.0 or Tr <= 0:
+        return 0.0  # Above critical point or invalid T
     exponent = B + C * Tr + D * Tr * Tr + E * (Tr ** 3)
     return A * ((1.0 - Tr) ** exponent)
 

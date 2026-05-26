@@ -1,13 +1,29 @@
 """
 Rekarisk — Gas Hydrate Formation Check.
 
-Determines whether gas hydrates will form under given P, T conditions.
-Focuses on natural gas hydrate formers: CH4, C2H6, C3H8, CO2, H2S.
+⚠️ UNUSABLE — Please repair with experimental data ⚠️
 
-References:
-  - Katz, D.L. (1945). "Prediction of Conditions for Hydrate Formation in Natural Gases"
+The hydrate formation temperature/pressure curves in this module use
+simplified Sloan & Katz correlations that have NOT been calibrated
+against experimental hydrate equilibrium data. Current predictions are
+scientifically unsound and should not be used for engineering decisions.
+
+Required to make this usable:
+  1. Replace Katz K-value tables with experimental P-T equilibrium data
+     from Sloan (2008) or Carroll (2014) for each pure former (CH4, C2H6,
+     C3H8, iC4, CO2, H2S, N2).
+  2. Implement proper mixed-gas prediction (CSMGem or van der Waals-Platteeuw).
+  3. Validate against published experimental data (e.g., Deaton & Frost,
+     McLeod & Campbell, Robinson & Hutton).
+  4. Calibrate inhibition models (methanol, MEG) against field data.
+
+Current state: Skeleton code with placeholder correlations — NOT VALIDATED.
+Do NOT use for safety-critical hydrate risk assessment.
+
+References (for repair):
   - Sloan, E.D. & Koh, C.A. (2008). "Clathrate Hydrates of Natural Gases", 3rd ed.
   - Carroll, J. (2014). "Natural Gas Hydrates", 3rd ed.
+  - Ballard, A.L. & Sloan, E.D. (2002). "The next generation of hydrate prediction"
 
 All calculations in SI: T [K], P [Pa].
 """
