@@ -7,7 +7,7 @@ name = "rekarisk"
 version = "1.0.0.dev0"
 description = "Consequence & Risk Analysis for Safety Engineers"
 readme = "README.md"
-license = {text = "MIT"}
+license = {text = "Proprietary"}
 requires-python = ">=3.11"
 authors = [
     {name = "Rekarisk Contributors"},
@@ -21,7 +21,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Chemistry",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
-    "License :: OSI Approved :: MIT License",
+    "License :: Other/Proprietary",
     "Operating System :: OS Independent",
 ]
 dependencies = [
