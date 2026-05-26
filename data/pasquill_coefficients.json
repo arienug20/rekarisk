@@ -1,0 +1,175 @@
+{
+  "name": "Pasquill-Gifford Dispersion Coefficients",
+  "description": "Sigma-y and sigma-z coefficients for Pasquill-Gifford dispersion model (Briggs formulations). sigma = a * x^b for x in km, sigma in km. For sigma-z, some stability classes use piecewise with an additive c term: sigma_z = a * x^b + c.",
+  "reference": "Briggs, G.A. (1973). Diffusion estimation for small emissions. ATDL Contribution File No. 79. NOAA.",
+  "sigma_y": {
+    "description": "sigma_y = a * x^b (x in km, sigma_y in km)",
+    "rural": {
+      "A": {"a": 0.22, "b": 0.894},
+      "B": {"a": 0.16, "b": 0.894},
+      "C": {"a": 0.11, "b": 0.894},
+      "D": {"a": 0.08, "b": 0.894},
+      "E": {"a": 0.06, "b": 0.894},
+      "F": {"a": 0.04, "b": 0.894}
+    },
+    "urban": {
+      "A": {"a": 0.32, "b": 0.894},
+      "B": {"a": 0.32, "b": 0.894},
+      "C": {"a": 0.22, "b": 0.894},
+      "D": {"a": 0.16, "b": 0.894},
+      "E": {"a": 0.11, "b": 0.894},
+      "F": {"a": 0.11, "b": 0.894}
+    }
+  },
+  "sigma_z": {
+    "description": "sigma_z = a * x^b for x in km, sigma_z in km. Piecewise by downwind distance ranges.",
+    "rural": {
+      "A": [
+        {"x_min": 0.0,   "x_max": 0.5,   "a": 0.020, "b": 1.0, "c": 0.0,    "formula": "sigma_z = 0.020 * x"},
+        {"x_min": 0.5,   "x_max": 0.75,  "a": 0.020, "b": 1.0, "c": 5e-5,   "formula": "sigma_z = 0.020 * x + 0.00005 * x^2"},
+        {"x_min": 0.75,  "x_max": 999.0, "a": 0.020, "b": 1.0, "c": 5e-6,   "formula": "sigma_z = 0.020 * x + 0.000005 * x^2"}
+      ],
+      "B": [
+        {"x_min": 0.0,   "x_max": 0.5,   "a": 0.060, "b": 0.894, "c": 0.0, "formula": "sigma_z = 0.060 * x^0.894"},
+        {"x_min": 0.5,   "x_max": 999.0, "a": 0.060, "b": 0.894, "c": 0.0, "formula": "sigma_z = 0.060 * x^0.894"}
+      ],
+      "C": [
+        {"x_min": 0.0,   "x_max": 999.0, "a": 0.060, "b": 0.894, "c": 0.0, "formula": "sigma_z = 0.060 * x^0.894"}
+      ],
+      "D": [
+        {"x_min": 0.0,   "x_max": 0.5,   "a": 0.060, "b": 0.894, "c": 0.0, "formula": "sigma_z = 0.060 * x^0.894"},
+        {"x_min": 0.5,   "x_max": 5.0,   "a": 0.060, "b": 0.894, "c": 0.0, "formula": "sigma_z = 0.060 * x^0.894"},
+        {"x_min": 5.0,   "x_max": 999.0, "a": 0.060, "b": 0.894, "c": 0.0, "formula": "sigma_z = 0.060 * x^0.894"}
+      ],
+      "E": [
+        {"x_min": 0.0,   "x_max": 0.5,   "a": 0.040, "b": 0.894, "c": 0.0, "formula": "sigma_z = 0.040 * x^0.894"},
+        {"x_min": 0.5,   "x_max": 5.0,   "a": 0.040, "b": 0.894, "c": 0.0, "formula": "sigma_z = 0.040 * x^0.894"},
+        {"x_min": 5.0,   "x_max": 999.0, "a": 0.040, "b": 0.894, "c": 0.0, "formula": "sigma_z = 0.040 * x^0.894"}
+      ],
+      "F": [
+        {"x_min": 0.0,   "x_max": 0.5,   "a": 0.020, "b": 0.894, "c": 0.0, "formula": "sigma_z = 0.020 * x^0.894"},
+        {"x_min": 0.5,   "x_max": 5.0,   "a": 0.020, "b": 0.894, "c": 0.0, "formula": "sigma_z = 0.020 * x^0.894"},
+        {"x_min": 5.0,   "x_max": 999.0, "a": 0.020, "b": 0.894, "c": 0.0, "formula": "sigma_z = 0.020 * x^0.894"}
+      ]
+    },
+    "urban": {
+      "A": [
+        {"x_min": 0.0,   "x_max": 0.5,   "a": 0.024, "b": 1.0, "c": 0.0,    "formula": "sigma_z = 0.024 * x"},
+        {"x_min": 0.5,   "x_max": 0.75,  "a": 0.024, "b": 1.0, "c": 2e-5,   "formula": "sigma_z = 0.024 * x + 0.00002 * x^2"},
+        {"x_min": 0.75,  "x_max": 999.0, "a": 0.024, "b": 1.0, "c": 5e-6,   "formula": "sigma_z = 0.024 * x + 0.000005 * x^2"}
+      ],
+      "B": [
+        {"x_min": 0.0,   "x_max": 0.5,   "a": 0.060, "b": 0.894, "c": 0.0, "formula": "sigma_z = 0.060 * x^0.894"},
+        {"x_min": 0.5,   "x_max": 999.0, "a": 0.060, "b": 0.894, "c": 0.0, "formula": "sigma_z = 0.060 * x^0.894"}
+      ],
+      "C": [
+        {"x_min": 0.0,   "x_max": 999.0, "a": 0.060, "b": 0.894, "c": 0.0, "formula": "sigma_z = 0.060 * x^0.894"}
+      ],
+      "D": [
+        {"x_min": 0.0,   "x_max": 0.5,   "a": 0.060, "b": 0.894, "c": 0.0, "formula": "sigma_z = 0.060 * x^0.894"},
+        {"x_min": 0.5,   "x_max": 5.0,   "a": 0.060, "b": 0.894, "c": 0.0, "formula": "sigma_z = 0.060 * x^0.894"},
+        {"x_min": 5.0,   "x_max": 999.0, "a": 0.060, "b": 0.894, "c": 0.0, "formula": "sigma_z = 0.060 * x^0.894"}
+      ],
+      "E": [
+        {"x_min": 0.0,   "x_max": 0.5,   "a": 0.040, "b": 0.894, "c": 0.0, "formula": "sigma_z = 0.040 * x^0.894"},
+        {"x_min": 0.5,   "x_max": 5.0,   "a": 0.040, "b": 0.894, "c": 0.0, "formula": "sigma_z = 0.040 * x^0.894"},
+        {"x_min": 5.0,   "x_max": 999.0, "a": 0.040, "b": 0.894, "c": 0.0, "formula": "sigma_z = 0.040 * x^0.894"}
+      ],
+      "F": [
+        {"x_min": 0.0,   "x_max": 0.5,   "a": 0.016, "b": 0.894, "c": 0.0, "formula": "sigma_z = 0.016 * x^0.894"},
+        {"x_min": 0.5,   "x_max": 5.0,   "a": 0.016, "b": 0.894, "c": 0.0, "formula": "sigma_z = 0.016 * x^0.894"},
+        {"x_min": 5.0,   "x_max": 999.0, "a": 0.016, "b": 0.894, "c": 0.0, "formula": "sigma_z = 0.016 * x^0.894"}
+      ]
+    }
+  },
+  "stability_classification_table": {
+    "description": "Pasquill-Gifford stability classification from wind speed and insolation/cloud cover",
+    "note": "Wind speed in m/s at 10m height. Daytime uses solar radiation (strong/moderate/slight). Nighttime uses cloud cover (overcast >4/8 or clear <=3/8).",
+    "classes": {
+      "A": "Very unstable",
+      "B": "Moderately unstable",
+      "C": "Slightly unstable",
+      "D": "Neutral",
+      "E": "Slightly stable",
+      "F": "Moderately stable"
+    },
+    "daytime": {
+      "strong_radiation": {
+        "wind_lt_2": "A",
+        "wind_2_to_3": "A-B",
+        "wind_3_to_5": "B",
+        "wind_5_to_6": "C",
+        "wind_gt_6": "C"
+      },
+      "moderate_radiation": {
+        "wind_lt_2": "A-B",
+        "wind_2_to_3": "B",
+        "wind_3_to_5": "B-C",
+        "wind_5_to_6": "C-D",
+        "wind_gt_6": "D"
+      },
+      "slight_radiation": {
+        "wind_lt_2": "B",
+        "wind_2_to_3": "C",
+        "wind_3_to_5": "C",
+        "wind_5_to_6": "D",
+        "wind_gt_6": "D"
+      }
+    },
+    "nighttime": {
+      "overcast_gt_4_8": {
+        "wind_lt_2": "F",
+        "wind_2_to_3": "E",
+        "wind_3_to_5": "D",
+        "wind_5_to_6": "D",
+        "wind_gt_6": "D"
+      },
+      "clear_le_3_8": {
+        "wind_lt_2": "F",
+        "wind_2_to_3": "F",
+        "wind_3_to_5": "E",
+        "wind_5_to_6": "D",
+        "wind_gt_6": "D"
+      }
+    }
+  },
+  "mixing_height_defaults": {
+    "description": "Default mixing height (m) by stability class and time of day",
+    "daytime": {
+      "A": 2000,
+      "B": 1500,
+      "C": 1000,
+      "D": 800,
+      "E": 500,
+      "F": 300
+    },
+    "nighttime": {
+      "A": 500,
+      "B": 500,
+      "C": 400,
+      "D": 300,
+      "E": 200,
+      "F": 100
+    }
+  },
+  "power_law_exponents": {
+    "A": 0.07,
+    "B": 0.07,
+    "C": 0.10,
+    "D": 0.15,
+    "E": 0.35,
+    "F": 0.55
+  },
+  "wind_profile_descriptions": {
+    "calm_sea": {"z0": 0.0002, "description": "Calm open sea"},
+    "smooth_desert": {"z0": 0.0003, "description": "Smooth desert or mud flats"},
+    "short_grass": {"z0": 0.01, "description": "Short grass, mown lawn"},
+    "long_grass": {"z0": 0.05, "description": "Long grass, crops"},
+    "agricultural": {"z0": 0.10, "description": "Agricultural land with hedges"},
+    "suburban_light": {"z0": 0.30, "description": "Light suburban, scattered buildings"},
+    "suburban_dense": {"z0": 1.00, "description": "Dense suburban, many houses"},
+    "urban": {"z0": 2.00, "description": "Urban, tall buildings"},
+    "industrial_complex": {"z0": 3.00, "description": "Industrial complex with large structures"},
+    "city_center": {"z0": 5.00, "description": "City center with high-rises"}
+  }
+}
