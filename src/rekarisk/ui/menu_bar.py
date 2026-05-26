@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from PyQt6.QtCore import pyqtSignal, QObject
 from PyQt6.QtGui import QAction, QKeySequence
-from PyQt6.QtWidgets import QMenuBar, QMenu
+from PyQt6.QtWidgets import QMenuBar, QMenu, QMessageBox
 
 
 class RekariskMenuBar(QMenuBar):
@@ -36,6 +36,11 @@ class RekariskMenuBar(QMenuBar):
     show_report = pyqtSignal()
     show_comparison = pyqtSignal()
 
+    show_audit_viewer = pyqtSignal()
+    create_checkpoint = pyqtSignal()
+    restore_checkpoint = pyqtSignal()
+    list_checkpoints = pyqtSignal()
+
     show_help = pyqtSignal()
     show_about = pyqtSignal()
 
@@ -50,52 +55,93 @@ class RekariskMenuBar(QMenuBar):
         self._create_tools_menu()
         self._create_help_menu()
 
+    @property
+    def recent_menu(self) -> QMenu | None:
+        return self._recent_menu
+
+    def add_file_recent_menu(self, menu: QMenu):
+        """Add a recent-files submenu to the File menu (called by MainWindow)."""
+        self._recent_menu = menu
+        if self._file_menu:
+            # Insert before Close Project separator
+            self._file_menu.addMenu(menu)
+
     # ── File Menu ──
 
     def _create_file_menu(self):
-        menu = self.addMenu("&File")
+        self._file_menu = self.addMenu("&File")
+        self._recent_menu = None
 
         act = QAction("&New Project...", self)
         act.setShortcut(QKeySequence.StandardKey.New)
         act.setStatusTip("Create a new consequence analysis project")
         act.triggered.connect(self.new_project.emit)
-        menu.addAction(act)
+        self._file_menu.addAction(act)
 
         act = QAction("&Open Project...", self)
         act.setShortcut(QKeySequence.StandardKey.Open)
         act.setStatusTip("Open an existing project file (*.caproj)")
         act.triggered.connect(self.open_project.emit)
-        menu.addAction(act)
+        self._file_menu.addAction(act)
 
-        menu.addSeparator()
+        self._file_menu.addSeparator()
 
         act = QAction("&Save", self)
         act.setShortcut(QKeySequence.StandardKey.Save)
         act.setStatusTip("Save the current project")
         act.triggered.connect(self.save_project.emit)
-        menu.addAction(act)
+        self._file_menu.addAction(act)
 
         act = QAction("Save &As...", self)
         act.setShortcut(QKeySequence.StandardKey.SaveAs)
         act.setStatusTip("Save the project with a new name")
         act.triggered.connect(self.save_project_as.emit)
-        menu.addAction(act)
+        self._file_menu.addAction(act)
 
-        menu.addSeparator()
+        self._file_menu.addSeparator()
+
+        # Checkpoints submenu
+        checkpoint_menu = self._file_menu.addMenu("Checkpoints")
+
+        act = QAction("&Create Checkpoint", self)
+        act.setShortcut(QKeySequence("Ctrl+Shift+S"))
+        act.setStatusTip("Create a project state checkpoint")
+        act.triggered.connect(self.create_checkpoint.emit)
+        checkpoint_menu.addAction(act)
+
+        act = QAction("&Restore Checkpoint...", self)
+        act.setStatusTip("Restore project from a checkpoint")
+        act.triggered.connect(self.restore_checkpoint.emit)
+        checkpoint_menu.addAction(act)
+
+        act = QAction("&List Checkpoints...", self)
+        act.setStatusTip("View all checkpoints for this project")
+        act.triggered.connect(self.list_checkpoints.emit)
+        checkpoint_menu.addAction(act)
+
+        self._file_menu.addSeparator()
+
+        act = QAction("Audit &Trail", self)
+        act.setShortcut(QKeySequence("Ctrl+Shift+A"))
+        act.setStatusTip("View the project audit trail")
+        act.triggered.connect(self.show_audit_viewer.emit)
+        self._file_menu.addAction(act)
+
+        self._file_menu.addSeparator()
 
         act = QAction("&Close Project", self)
         act.setShortcut(QKeySequence("Ctrl+W"))
         act.setStatusTip("Close the current project")
         act.triggered.connect(self.close_project.emit)
-        menu.addAction(act)
+        self._file_menu.addAction(act)
 
-        menu.addSeparator()
+        self._file_menu.addSeparator()
 
         act = QAction("E&xit", self)
         act.setShortcut(QKeySequence.StandardKey.Quit)
         act.setStatusTip("Exit Rekarisk")
         act.triggered.connect(self.exit_app.emit)
-        menu.addAction(act)
+        self._file_menu.addAction(act)
 
     # ── Edit Menu ──
 

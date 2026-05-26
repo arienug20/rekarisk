@@ -27,6 +27,16 @@ from .units import (
     convert,
     format_si,
 )
+from .audit_trail import AuditTrail, AuditEntry, AuditAction
+from .project_file import (
+    ProjectFile, ProjectMetadata, ProjectData,
+    FORMAT_VERSION, FILE_EXTENSION, FILE_FILTER,
+)
+from .checkpoint import (
+    Checkpoint, get_project_id_from_path, get_project_id_from_name,
+    get_total_checkpoint_size, purge_all_checkpoints,
+)
+
 from .validation import (
     ValidationResult,
     ValidationMessage,

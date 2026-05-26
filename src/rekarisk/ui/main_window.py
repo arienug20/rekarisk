@@ -6,8 +6,8 @@ on the left, central workspace for scenario editors, and support for
 new/open/save project lifecycle.
 
 Project File Format (*.caproj):
-  JSON-based format containing all project metadata, scenarios,
-  weather cases, results, and report configurations.
+  ZIP-based format containing all project metadata, scenarios,
+  weather cases, results, report configurations, and audit trail.
 """
 
 from __future__ import annotations
@@ -23,19 +23,25 @@ from PyQt6.QtGui import QAction, QCloseEvent, QIcon
 from PyQt6.QtWidgets import (
     QMainWindow, QDockWidget, QTabWidget, QWidget, QVBoxLayout,
     QLabel, QMessageBox, QStatusBar, QFileDialog, QApplication,
-    QToolBar, QSplitter,
+    QToolBar, QSplitter, QInputDialog, QMenu,
 )
 
 from .menu_bar import RekariskMenuBar
 from .project_panel import ProjectPanel
 from .substance_selector import SubstanceSelector
+from .audit_viewer import AuditViewer
 
 from ..core.substance_db import SubstanceDatabase, get_database
+from ..core.audit_trail import AuditTrail, AuditAction
+from ..core.project_file import ProjectFile, FILE_FILTER as PROJ_FILE_FILTER
+from ..core.checkpoint import Checkpoint, get_project_id_from_path, get_project_id_from_name
 from .. import __version__
 
 
 PROJECT_FILE_EXT = "caproj"
-PROJECT_FILE_FILTER = f"Rekarisk Project Files (*.{PROJECT_FILE_EXT});;All Files (*)"
+PROJECT_FILE_FILTER = PROJ_FILE_FILTER
+RECENT_FILES_KEY = "recent_files"
+MAX_RECENT_FILES = 10
 
 
 class MainWindow(QMainWindow):
@@ -73,6 +79,14 @@ class MainWindow(QMainWindow):
         self._is_dirty: bool = False
         self._db: SubstanceDatabase = get_database()
 
+        # Phase 13 — Audit & File Management
+        self._audit_trail = AuditTrail()
+        self._project_file = ProjectFile()
+        self._checkpoint: Optional[Checkpoint] = None
+        self._audit_viewer: Optional[AuditViewer] = None
+        self._audit_dock: Optional[QDockWidget] = None
+        self._recent_menu: Optional[QMenu] = None
+
         self._setup_window()
         self._setup_menu()
         self._setup_toolbar()
@@ -80,6 +94,7 @@ class MainWindow(QMainWindow):
         self._setup_central()
         self._setup_statusbar()
         self._connect_signals()
+        self._setup_recent_files_menu()
 
         self.update_title()
         self.statusBar().showMessage("Ready — Create a new project or open an existing one", 5000)
@@ -234,6 +249,12 @@ class MainWindow(QMainWindow):
         self._menu_bar.save_project_as.connect(self.save_project_as)
         self._menu_bar.close_project.connect(self.close_project)
         self._menu_bar.exit_app.connect(self.close)
+        self._menu_bar.undo_triggered.connect(self._on_undo)
+        self._menu_bar.redo_triggered.connect(self._on_redo)
+        self._menu_bar.create_checkpoint.connect(self.create_checkpoint)
+        self._menu_bar.restore_checkpoint.connect(self.restore_checkpoint)
+        self._menu_bar.list_checkpoints.connect(self.list_checkpoints)
+        self._menu_bar.show_audit_viewer.connect(self.show_audit_viewer)
 
         self._menu_bar.show_substance_db.connect(self._open_substance_db)
         self._menu_bar.show_batch_runner.connect(self._open_batch_runner)
@@ -273,19 +294,38 @@ class MainWindow(QMainWindow):
             "modified_at": datetime.now().isoformat(),
             "name": "Untitled",
             "description": "",
+            "author": "",
             "scenarios": [],
             "weather_cases": [],
+            "weather_data": {},
+            "terrain_data": {},
             "substances": [],
             "settings": {},
+            "results": [],
+            "reports": [],
         }
         self._is_dirty = True
+
+        # Phase 13: fresh audit trail and project file
+        self._audit_trail = AuditTrail()
+        self._project_file = ProjectFile()
+        self._project_file.from_main_window_data(self._project_data)
+        self._checkpoint = Checkpoint(get_project_id_from_name(self._project_name))
+
+        self._audit_trail.log(
+            action=AuditAction.CREATE,
+            module="project",
+            description=f"New project created: {self._project_name}",
+        )
+
         self._project_panel.load_project("Untitled")
+        self._update_audit_viewer()
         self.update_title()
         self.statusBar().showMessage("New project created", 3000)
         self.project_loaded.emit(self._project_name)
 
     def open_project(self, path: str | None = None):
-        """Open an existing project file."""
+        """Open an existing project file (.caproj)."""
         if not self._maybe_save():
             return
 
@@ -298,16 +338,40 @@ class MainWindow(QMainWindow):
                 return
 
         try:
-            with open(path, "r", encoding="utf-8") as f:
-                self._project_data = json.load(f)
-        except (json.JSONDecodeError, OSError) as e:
+            # Phase 13: try .caproj format first
+            proj_path = Path(path)
+            if proj_path.suffix == f".{PROJECT_FILE_EXT}":
+                self._project_file = ProjectFile.load(proj_path)
+                self._audit_trail = self._project_file.audit_trail
+                self._project_data = self._project_file.to_main_window_data()
+            else:
+                # Legacy JSON format fallback
+                with open(path, "r", encoding="utf-8") as f:
+                    self._project_data = json.load(f)
+                self._project_file = ProjectFile()
+                self._project_file.from_main_window_data(self._project_data)
+                self._audit_trail = AuditTrail()
+                self._audit_trail.log(
+                    action=AuditAction.IMPORT,
+                    module="project",
+                    description=f"Opened legacy JSON project: {proj_path.name}",
+                    details={"path": str(proj_path)},
+                )
+        except Exception as e:
             QMessageBox.critical(self, "Error", f"Could not open project:\n{e}")
             return
 
         self._project_path = Path(path)
         self._project_name = self._project_data.get("name", self._project_path.stem)
         self._is_dirty = False
+        self._checkpoint = Checkpoint(
+            get_project_id_from_path(self._project_path))
+
+        # Add to recent files
+        self._add_recent_file(str(self._project_path))
+
         self._project_panel.load_project(self._project_name, str(self._project_path))
+        self._update_audit_viewer()
         self.update_title()
         self.statusBar().showMessage(f"Opened: {self._project_path.name}", 3000)
         self.project_loaded.emit(self._project_name)
@@ -333,15 +397,37 @@ class MainWindow(QMainWindow):
         return self._write_project(self._project_path)
 
     def _write_project(self, path: Path) -> bool:
-        """Write project data to file. Returns True on success."""
+        """Write project data to .caproj file. Returns True on success."""
         try:
             self._project_data["modified_at"] = datetime.now().isoformat()
             path.parent.mkdir(parents=True, exist_ok=True)
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(self._project_data, f, indent=2, ensure_ascii=False)
+
+            # Phase 13: use ProjectFile for ZIP-based save
+            self._project_file.from_main_window_data(self._project_data)
+            # Preserve the existing audit trail entries
+            for entry in self._audit_trail:
+                if entry not in self._project_file.audit_trail:
+                    self._project_file.audit_trail.log_entry(entry)
+
+            # Log save action
+            self._audit_trail.log(
+                action=AuditAction.EXPORT,
+                module="project",
+                description=f"Project saved to {path.name}",
+                details={"path": str(path), "scenarios": len(self._project_data.get("scenarios", []))},
+            )
+            self._project_file.audit_trail = self._audit_trail
+
+            self._project_file.save(path)
+
             self._is_dirty = False
+            self._update_audit_viewer()
             self.update_title()
             self.statusBar().showMessage(f"Saved: {path.name}", 3000)
+
+            # Add to recent files
+            self._add_recent_file(str(path))
+
             return True
         except OSError as e:
             QMessageBox.critical(self, "Error", f"Could not save project:\n{e}")
@@ -351,11 +437,20 @@ class MainWindow(QMainWindow):
         """Close the current project."""
         if not self._maybe_save():
             return
+
+        # Phase 13: auto-checkpoint before close
+        if self._checkpoint and self._project_data:
+            self._checkpoint.auto_checkpoint(self._project_data, "close")
+
         self._project_path = None
         self._project_name = "Untitled"
         self._project_data = {}
         self._is_dirty = False
+        self._audit_trail = AuditTrail()
+        self._project_file = ProjectFile()
+        self._checkpoint = None
         self._project_panel.clear_project()
+        self._update_audit_viewer()
         self.update_title()
         self.project_closed.emit()
 
@@ -455,6 +550,15 @@ class MainWindow(QMainWindow):
             "created_at": datetime.now().isoformat(),
         }
         self._project_data.setdefault("scenarios", []).append(scenario)
+
+        # Phase 13: audit log
+        self._audit_trail.log(
+            action=AuditAction.CREATE,
+            module=scenario_type,
+            description=f"Added {label} scenario: {name}",
+            details={"scenario_id": scenario["id"], "type": scenario_type},
+        )
+
         self.set_dirty()
         self.statusBar().showMessage(f"Added {label} scenario: {name}", 3000)
 
@@ -468,6 +572,15 @@ class MainWindow(QMainWindow):
             "name": name,
         }
         self._project_data.setdefault("weather_cases", []).append(weather)
+
+        # Phase 13: audit log
+        self._audit_trail.log(
+            action=AuditAction.CREATE,
+            module="weather",
+            description=f"Added weather case: {name}",
+            details=weather,
+        )
+
         self.set_dirty()
         self.statusBar().showMessage(f"Added weather case: {name}", 3000)
 
@@ -577,3 +690,277 @@ class MainWindow(QMainWindow):
         settings.setValue("mainwindow/state", self.saveState())
 
         event.accept()
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Phase 13 — Audit Trail Integration
+    # ══════════════════════════════════════════════════════════════════════
+
+    def _setup_audit_viewer(self) -> QDockWidget:
+        """Create or return the audit viewer dock widget."""
+        if self._audit_dock is not None:
+            return self._audit_dock
+
+        self._audit_viewer = AuditViewer()
+        self._audit_dock = QDockWidget("Audit Trail", self)
+        self._audit_dock.setWidget(self._audit_viewer)
+        self._audit_dock.setObjectName("AuditDock")
+        self._audit_dock.setMinimumWidth(300)
+        self._audit_dock.setMinimumHeight(200)
+        self._audit_dock.setFeatures(
+            QDockWidget.DockWidgetFeature.DockWidgetMovable |
+            QDockWidget.DockWidgetFeature.DockWidgetFloatable |
+            QDockWidget.DockWidgetFeature.DockWidgetClosable
+        )
+
+        # Add to View menu
+        self._view_audit_dock = self._menu_bar.add_view_action(
+            "Audit Trail", checkable=True
+        )
+        self._view_audit_dock.toggled.connect(self._audit_dock.setVisible)
+
+        # Initially hidden, shown on demand
+        self._audit_dock.hide()
+
+        return self._audit_dock
+
+    def _update_audit_viewer(self):
+        """Refresh the audit viewer with current trail entries."""
+        if self._audit_viewer is not None:
+            self._audit_viewer.set_entries(self._audit_trail.to_dict_list())
+
+    def show_audit_viewer(self):
+        """Show the audit trail viewer dock."""
+        dock = self._setup_audit_viewer()
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, dock)
+        dock.show()
+        dock.raise_()
+        self._update_audit_viewer()
+        if self._view_audit_dock:
+            self._view_audit_dock.setChecked(True)
+        self.statusBar().showMessage("Audit Trail viewer opened", 3000)
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Phase 13 — Checkpoint / Undo System
+    # ══════════════════════════════════════════════════════════════════════
+
+    def create_checkpoint(self, label: str = "") -> Optional[str]:
+        """Create a manual checkpoint of the current project state.
+
+        Returns the checkpoint ID, or None if no project is loaded.
+        """
+        if not self._checkpoint:
+            QMessageBox.warning(self, "No Project",
+                                "Open or create a project first.")
+            return None
+
+        if not label:
+            label, ok = QInputDialog.getText(
+                self, "Checkpoint Label",
+                "Label for this checkpoint:",
+                text=f"Manual checkpoint {datetime.now().strftime('%H:%M')}"
+            )
+            if not ok or not label.strip():
+                return None
+
+        cid = self._checkpoint.create(self._project_data, label)
+        self._audit_trail.log(
+            action=AuditAction.RUN,
+            module="checkpoint",
+            description=f"Checkpoint created: {label}",
+            details={"checkpoint_id": cid, "label": label},
+        )
+        self.statusBar().showMessage(f"Checkpoint created: {label}", 3000)
+        return cid
+
+    def restore_checkpoint(self):
+        """Restore from a selected checkpoint."""
+        if not self._checkpoint:
+            QMessageBox.warning(self, "No Project",
+                                "Open or create a project first.")
+            return
+
+        cps = self._checkpoint.list_checkpoints()
+        if not cps:
+            QMessageBox.information(self, "No Checkpoints",
+                                    "No checkpoints available for this project.")
+            return
+
+        # Show list dialog
+        items = []
+        for cp in cps:
+            ts = cp.get("timestamp", "")[:19]
+            label = cp.get("label", "Unknown")
+            sc = cp.get("scenario_count", 0)
+            items.append(f"{ts} — {label} ({sc} scenarios)")
+
+        item, ok = QInputDialog.getItem(
+            self, "Restore Checkpoint",
+            "Select a checkpoint to restore:",
+            items, 0, False
+        )
+        if not ok or not item:
+            return
+
+        idx = items.index(item)
+        cid = cps[idx]["id"]
+
+        # Auto-checkpoint current state before restore
+        self._checkpoint.auto_checkpoint(self._project_data, "restore")
+
+        # Confirm
+        result = QMessageBox.question(
+            self, "Restore Checkpoint",
+            f"Restore checkpoint:\n\n{item}\n\n"
+            "Current unsaved changes will be lost. Continue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        if result != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            restored_data = self._checkpoint.restore(cid)
+            self._project_data = restored_data
+            self._project_file.from_main_window_data(restored_data)
+            self._is_dirty = True
+            self._project_name = self._project_data.get("name", self._project_name)
+            self._project_panel.load_project(self._project_name,
+                                              str(self._project_path) if self._project_path else "")
+
+            self._audit_trail.log(
+                action=AuditAction.RESTORE,
+                module="checkpoint",
+                description=f"Restored checkpoint: {cps[idx].get('label', 'Unknown')}",
+                details={"checkpoint_id": cid},
+            )
+
+            self._update_audit_viewer()
+            self.update_title()
+            self.statusBar().showMessage(
+                f"Restored checkpoint: {cps[idx].get('label', 'Unknown')}", 5000)
+        except FileNotFoundError as e:
+            QMessageBox.critical(self, "Error", str(e))
+
+    def list_checkpoints(self):
+        """Show a list of all checkpoints for the current project."""
+        if not self._checkpoint:
+            QMessageBox.warning(self, "No Project",
+                                "Open or create a project first.")
+            return
+
+        cps = self._checkpoint.list_checkpoints()
+        if not cps:
+            QMessageBox.information(self, "No Checkpoints",
+                                    "No checkpoints available for this project.")
+            return
+
+        lines = [f"Project: {self._project_name}"]
+        lines.append(f"Total checkpoints: {len(cps)} (max 20)")
+        lines.append("")
+        for cp in cps:
+            ts = cp.get("timestamp", "")[:19]
+            label = cp.get("label", "Unknown")
+            size_kb = cp.get("size_bytes", 0) / 1024
+            lines.append(f"  {ts} — {label}")
+            lines.append(f"         Size: {size_kb:.1f} KB | Scenarios: {cp.get('scenario_count', 0)}")
+
+        QMessageBox.information(self, "Checkpoints", "\n".join(lines))
+
+    def _on_undo(self):
+        """Undo: restore from the latest checkpoint."""
+        if not self._checkpoint:
+            self.statusBar().showMessage("No project to undo", 3000)
+            return
+
+        cps = self._checkpoint.list_checkpoints()
+        if not cps:
+            self.statusBar().showMessage("No checkpoints to undo", 3000)
+            return
+
+        latest = cps[0]
+        try:
+            self._checkpoint.auto_checkpoint(self._project_data, "undo")
+            restored_data = self._checkpoint.restore(latest["id"])
+            self._project_data = restored_data
+            self._project_file.from_main_window_data(restored_data)
+            self._is_dirty = True
+            self._project_name = self._project_data.get("name", self._project_name)
+            self._project_panel.load_project(self._project_name,
+                                              str(self._project_path) if self._project_path else "")
+
+            self._audit_trail.log(
+                action=AuditAction.RESTORE,
+                module="undo",
+                description=f"Undo to checkpoint: {latest.get('label', 'Unknown')}",
+                details={"checkpoint_id": latest["id"]},
+            )
+            self._update_audit_viewer()
+            self.update_title()
+            self.statusBar().showMessage(
+                f"Undo: restored '{latest.get('label', 'Unknown')}'", 5000)
+        except Exception as e:
+            QMessageBox.critical(self, "Undo Failed", str(e))
+
+    def _on_redo(self):
+        """Redo is not directly supported — inform user."""
+        self.statusBar().showMessage(
+            "Redo: use Checkpoints → Restore to pick a specific checkpoint", 5000)
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Phase 13 — Recent Files
+    # ══════════════════════════════════════════════════════════════════════
+
+    def _setup_recent_files_menu(self):
+        """Build the recent files submenu under File."""
+        self._recent_menu = QMenu("Recent Projects", self)
+        self._menu_bar.add_file_recent_menu(self._recent_menu)
+        self._refresh_recent_menu()
+
+    def _add_recent_file(self, path: str):
+        """Add a file path to the recent files list."""
+        settings = QSettings("Rekarisk", "Rekarisk")
+        recent = settings.value(RECENT_FILES_KEY, []) or []
+        if not isinstance(recent, list):
+            recent = []
+
+        # Remove if already exists (will be re-added at top)
+        if path in recent:
+            recent.remove(path)
+
+        # Prepend and truncate
+        recent.insert(0, path)
+        recent = recent[:MAX_RECENT_FILES]
+
+        settings.setValue(RECENT_FILES_KEY, recent)
+        settings.sync()
+        self._refresh_recent_menu()
+
+    def _refresh_recent_menu(self):
+        """Rebuild the recent files submenu."""
+        if self._recent_menu is None:
+            return
+
+        self._recent_menu.clear()
+        settings = QSettings("Rekarisk", "Rekarisk")
+        recent = settings.value(RECENT_FILES_KEY, []) or []
+
+        if not recent or not isinstance(recent, list):
+            act = self._recent_menu.addAction("(No recent projects)")
+            act.setEnabled(False)
+            return
+
+        for p in recent:
+            if os.path.exists(p):
+                act = self._recent_menu.addAction(p)
+                act.triggered.connect(lambda checked, path=p: self.open_project(path))
+
+        self._recent_menu.addSeparator()
+        clear_act = self._recent_menu.addAction("Clear Recent List")
+        clear_act.triggered.connect(self._clear_recent_files)
+
+    def _clear_recent_files(self):
+        """Clear the recent files list."""
+        settings = QSettings("Rekarisk", "Rekarisk")
+        settings.setValue(RECENT_FILES_KEY, [])
+        settings.sync()
+        self._refresh_recent_menu()
+        self.statusBar().showMessage("Recent files list cleared", 3000)
