@@ -45,3 +45,13 @@ try:
     from .dispersion_results import DispersionResultsPanel
 except ImportError:
     DispersionResultsPanel = None
+
+try:
+    from .fire_panel import FirePanel
+except ImportError:
+    FirePanel = None
+
+try:
+    from .fire_results import FireResultsPanel
+except ImportError:
+    FireResultsPanel = None
