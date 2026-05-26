@@ -321,11 +321,12 @@ def classify_severity(
     Returns:
         Category name, or 'unknown'.
     """
+    category_names = list(thresholds.keys())
+    # For both ascending modes, thresholds are treated as upper bounds
+    # of each category band. We iterate in order (low→high severity)
+    # and return the first matching band.
     for category, threshold in thresholds.items():
-        if ascending:
-            if value < threshold:
-                return category
-        else:
-            if value > threshold:
-                return category
-    return list(thresholds.keys())[-1] if thresholds else "unknown"
+        if value < threshold:
+            return category
+    # Value exceeds all thresholds → highest severity band
+    return category_names[-1] if category_names else "unknown"
