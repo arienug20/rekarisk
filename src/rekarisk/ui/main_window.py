@@ -236,6 +236,11 @@ class MainWindow(QMainWindow):
         self._menu_bar.exit_app.connect(self.close)
 
         self._menu_bar.show_substance_db.connect(self._open_substance_db)
+        self._menu_bar.show_batch_runner.connect(self._open_batch_runner)
+        self._menu_bar.show_sensitivity.connect(self._open_sensitivity)
+        self._menu_bar.show_monte_carlo.connect(self._open_monte_carlo)
+        self._menu_bar.show_report.connect(self._open_report)
+        self._menu_bar.show_comparison.connect(self._open_comparison)
         self._menu_bar.show_about.connect(self._show_about)
 
         # Toolbar → slots
@@ -470,6 +475,62 @@ class MainWindow(QMainWindow):
         """Handle substance selection from the selector."""
         name = substance.name if substance else "?"
         self.statusBar().showMessage(f"Selected: {name}", 5000)
+
+    def _open_report(self):
+        """Open the report generation dialog."""
+        from .report_dialog import ReportDialog
+        results = self._project_data.get("results", [])
+        if not results:
+            # Build results from scenarios
+            results = []
+            for scenario in self._project_data.get("scenarios", []):
+                results.append({
+                    "name": scenario.get("name", "Scenario"),
+                    "type": scenario.get("type", "general"),
+                    "inputs": scenario.get("inputs", {}),
+                    "summary": scenario.get("summary", {}),
+                    "thresholds": scenario.get("thresholds", {}),
+                    "table_headers": scenario.get("table_headers", []),
+                    "table_rows": scenario.get("table_rows", []),
+                })
+        dialog = ReportDialog(self._project_data, results, self)
+        dialog.exec()
+
+    def _open_comparison(self):
+        """Open the case comparison panel."""
+        from .case_comparison import CaseComparisonPanel
+        results = self._project_data.get("results", [])
+        if not results:
+            for scenario in self._project_data.get("scenarios", []):
+                results.append({
+                    "name": scenario.get("name", "Scenario"),
+                    "type": scenario.get("type", "general"),
+                    "summary": scenario.get("summary", {}),
+                    "inputs": scenario.get("inputs", {}),
+                })
+        if not results:
+            QMessageBox.information(self, "No Results",
+                                    "Run some scenarios first to compare results.")
+            return
+        panel = CaseComparisonPanel()
+        panel.set_results(results)
+        idx = self.add_central_tab(panel, "\U0001f4ca Case Comparison")
+        self.statusBar().showMessage("Case comparison ready", 3000)
+
+    def _open_batch_runner(self):
+        """Open the batch runner (placeholder)."""
+        QMessageBox.information(self, "Batch Runner",
+                                "Batch runner will be available in a future update.")
+
+    def _open_sensitivity(self):
+        """Open sensitivity analysis (placeholder)."""
+        QMessageBox.information(self, "Sensitivity Analysis",
+                                "Sensitivity analysis will be available in a future update.")
+
+    def _open_monte_carlo(self):
+        """Open Monte Carlo simulation (placeholder)."""
+        QMessageBox.information(self, "Monte Carlo",
+                                "Monte Carlo simulation will be available in a future update.")
 
     def _open_substance_db(self):
         """Open the substance database editor (placeholder)."""

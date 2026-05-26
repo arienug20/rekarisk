@@ -33,6 +33,8 @@ class RekariskMenuBar(QMenuBar):
     show_batch_runner = pyqtSignal()
     show_sensitivity = pyqtSignal()
     show_monte_carlo = pyqtSignal()
+    show_report = pyqtSignal()
+    show_comparison = pyqtSignal()
 
     show_help = pyqtSignal()
     show_about = pyqtSignal()
@@ -163,6 +165,20 @@ class RekariskMenuBar(QMenuBar):
         act = QAction("&Monte Carlo Simulation...", self)
         act.setStatusTip("Uncertainty analysis via Monte Carlo")
         act.triggered.connect(self.show_monte_carlo.emit)
+        menu.addAction(act)
+
+        menu.addSeparator()
+
+        act = QAction("&Generate Report...", self)
+        act.setShortcut(QKeySequence("Ctrl+R"))
+        act.setStatusTip("Generate consequence analysis report")
+        act.triggered.connect(self.show_report.emit)
+        menu.addAction(act)
+
+        act = QAction("&Case Comparison...", self)
+        act.setShortcut(QKeySequence("Ctrl+Shift+C"))
+        act.setStatusTip("Compare multiple scenario results")
+        act.triggered.connect(self.show_comparison.emit)
         menu.addAction(act)
 
     # ── Help Menu ──
