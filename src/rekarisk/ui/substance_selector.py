@@ -7,8 +7,8 @@ and filtering by phase, hazard class, or tag.
 
 from __future__ import annotations
 
-from PyQt6.QtCore import pyqtSignal, Qt, QTimer
-from PyQt6.QtWidgets import (
+from PyQt5.QtCore import pyqtSignal, Qt, QTimer
+from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QListWidget,
     QListWidgetItem, QLabel, QComboBox, QGroupBox, QFormLayout,
     QSplitter, QFrame, QTextEdit,
@@ -80,8 +80,8 @@ class SubstanceSelector(QWidget):
         self._detail_text.setReadOnly(True)
         self._detail_text.setMaximumHeight(200)
         self._detail_text.setStyleSheet(
-            "QTextEdit { font-size: 11px; background: palette(window); "
-            "border: 1px solid palette(mid); border-radius: 4px; }"
+            "QTextEdit { font-size: 12px; background: #f5f5f5; "
+            "border: 1px solid #cccccc; border-radius: 4px; }"
         )
         detail_layout.addWidget(QLabel("Properties:"))
         detail_layout.addWidget(self._detail_text)

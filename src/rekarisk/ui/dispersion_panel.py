@@ -380,7 +380,7 @@ class WeatherTab(QWidget):
         }
 
         self.stability_label = QLabel(stability_desc["D"])
-        self.stability_label.setStyleSheet("color: #666; font-style: italic;")
+        self.stability_label.setStyleSheet("color: #555555; font-style: italic;")
         stab_form.addRow("", self.stability_label)
 
         self.stability_combo.currentTextChanged.connect(

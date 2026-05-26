@@ -15,9 +15,10 @@ and double-click to open/edit.
 
 from __future__ import annotations
 
-from PyQt6.QtCore import pyqtSignal, Qt
-from PyQt6.QtGui import QIcon, QAction
-from PyQt6.QtWidgets import (
+from PyQt5.QtCore import pyqtSignal, Qt
+from PyQt5.QtWidgets import QAction
+from PyQt5.QtGui import QIcon
+from PyQt5.QtWidgets import (
     QTreeWidget, QTreeWidgetItem, QMenu, QVBoxLayout, QWidget,
     QLabel, QHeaderView, QAbstractItemView,
 )
@@ -64,7 +65,7 @@ class ProjectPanel(QWidget):
         header = QLabel("Project")
         header.setStyleSheet(
             "QLabel { font-weight: bold; padding: 8px; "
-            "background: palette(window); border-bottom: 1px solid palette(mid); }"
+            "background: #f5f5f5; border-bottom: 1px solid #cccccc; }"
         )
         layout.addWidget(header)
 

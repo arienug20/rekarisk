@@ -9,9 +9,10 @@ Actions emit signals that are handled by MainWindow.
 
 from __future__ import annotations
 
-from PyQt6.QtCore import pyqtSignal, QObject
-from PyQt6.QtGui import QAction, QKeySequence
-from PyQt6.QtWidgets import QMenuBar, QMenu
+from PyQt5.QtCore import pyqtSignal, QObject
+from PyQt5.QtWidgets import QAction
+from PyQt5.QtGui import QKeySequence
+from PyQt5.QtWidgets import QMenuBar, QMenu
 
 
 class RekariskMenuBar(QMenuBar):

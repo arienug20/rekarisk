@@ -18,9 +18,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from PyQt6.QtCore import pyqtSignal, Qt, QSettings
-from PyQt6.QtGui import QAction, QCloseEvent, QIcon
-from PyQt6.QtWidgets import (
+from PyQt5.QtCore import pyqtSignal, Qt, QSettings
+from PyQt5.QtWidgets import QAction
+from PyQt5.QtGui import QCloseEvent, QIcon
+from PyQt5.QtWidgets import (
     QMainWindow, QDockWidget, QTabWidget, QWidget, QVBoxLayout,
     QLabel, QMessageBox, QStatusBar, QFileDialog, QApplication,
     QToolBar, QSplitter,
@@ -182,7 +183,7 @@ class MainWindow(QMainWindow):
         welcome_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         title = QLabel("Welcome to Rekarisk")
-        title.setStyleSheet("font-size: 24px; font-weight: bold; color: palette(mid);")
+        title.setStyleSheet("font-size: 24px; font-weight: bold; color: #333333;")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         welcome_layout.addWidget(title)
 
@@ -190,7 +191,7 @@ class MainWindow(QMainWindow):
             "Consequence & Risk Analysis for Safety Engineers\n\n"
             "Create a new project or open an existing one to get started."
         )
-        subtitle.setStyleSheet("font-size: 14px; color: palette(midlight);")
+        subtitle.setStyleSheet("font-size: 14px; color: #555555;")
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         subtitle.setWordWrap(True)
         welcome_layout.addWidget(subtitle)
@@ -202,7 +203,7 @@ class MainWindow(QMainWindow):
             "Ctrl+D  —  Substance Database\n"
             "F1      —  Help"
         )
-        shortcuts.setStyleSheet("font-size: 12px; color: palette(dark); margin-top: 20px;")
+        shortcuts.setStyleSheet("font-size: 12px; color: #444444; margin-top: 20px;")
         shortcuts.setAlignment(Qt.AlignmentFlag.AlignCenter)
         welcome_layout.addWidget(shortcuts)
 
@@ -219,7 +220,7 @@ class MainWindow(QMainWindow):
         self._status_bar.addPermanentWidget(self._dirty_label)
 
         self._version_label = QLabel(f"v{__version__}")
-        self._version_label.setStyleSheet("color: palette(mid); padding-right: 8px;")
+        self._version_label.setStyleSheet("color: #888888; padding-right: 8px;")
         self._status_bar.addPermanentWidget(self._version_label)
 
     # ══════════════════════════════════════════════════════════════════════

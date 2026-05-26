@@ -194,7 +194,7 @@ class MixtureEditorDialog(QDialog):
         self._msg_text = QTextEdit()
         self._msg_text.setReadOnly(True)
         self._msg_text.setMaximumHeight(60)
-        self._msg_text.setStyleSheet("QTextEdit { background: #f8f8f8; font-size: 11px; }")
+        self._msg_text.setStyleSheet("QTextEdit { background: #f5f5f5; font-size: 12px; }")
         layout.addWidget(self._msg_text)
 
         # ── OK / Cancel ──
@@ -425,7 +425,7 @@ class MixtureEditorDialog(QDialog):
                 other = "1.0000"
             other_item = QTableWidgetItem(other)
             other_item.setFlags(other_item.flags() & ~Qt.ItemIsEditable)
-            other_item.setForeground(QBrush(QColor("#888888")))
+            other_item.setForeground(QBrush(QColor("#666666")))
             self._table.setItem(i, 3, other_item)
 
             # Remove button

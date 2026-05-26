@@ -82,7 +82,7 @@ class SourceTermResultsPanel(QWidget):
         # Messages
         self.messages_area = QTextBrowser()
         self.messages_area.setMaximumHeight(80)
-        self.messages_area.setStyleSheet("QTextBrowser { color: #666; }")
+        self.messages_area.setStyleSheet("QTextBrowser { color: #555555; }")
         layout.addWidget(self.messages_area)
 
         # Buttons
