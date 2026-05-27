@@ -1473,19 +1473,189 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Case comparison ready", 3000)
 
     def _open_batch_runner(self):
-        """Open the batch runner (placeholder)."""
-        QMessageBox.information(self, "Batch Runner",
-                                "Batch runner will be available in a future update.")
+        """Open the batch runner dialog."""
+        from .batch_dialog import BatchDialog
+        from ..analysis.batch_runner import BatchInput
+
+        # Build a model function from the currently active scenario
+        model_fn = self._build_active_model_function()
+        if model_fn is None:
+            QMessageBox.warning(
+                self, "Batch Runner",
+                "No active scenario to run. Please open a scenario panel first.",
+            )
+            return
+
+        # Collect scenario templates from project data
+        templates = {}
+        scenarios = self._project_data.get("scenarios", {})
+        for name, sdata in scenarios.items():
+            templates[name] = sdata.get("params", {})
+
+        # Weather presets
+        weather_opts = [
+            {"label": "D – Neutral (3 m/s)", "wind_speed": 3.0, "stability": "D"},
+            {"label": "F – Stable (2 m/s)", "wind_speed": 2.0, "stability": "F"},
+            {"label": "C – Slightly unstable (4 m/s)", "wind_speed": 4.0, "stability": "C"},
+        ]
+
+        dialog = BatchDialog(
+            model_function=model_fn,
+            scenario_templates=templates if templates else None,
+            weather_options=weather_opts,
+            parent=self,
+        )
+        dialog.exec()
 
     def _open_sensitivity(self):
-        """Open sensitivity analysis (placeholder)."""
-        QMessageBox.information(self, "Sensitivity Analysis",
-                                "Sensitivity analysis will be available in a future update.")
+        """Open sensitivity analysis dialog."""
+        from .sensitivity_dialog import SensitivityDialog
+
+        model_fn = self._build_active_model_function()
+        if model_fn is None:
+            QMessageBox.warning(
+                self, "Sensitivity Analysis",
+                "No active scenario to run. Please open a scenario panel first.",
+            )
+            return
+
+        # Try to extract base params from the last active panel
+        base_params = self._extract_active_panel_params()
+
+        dialog = SensitivityDialog(
+            model_function=model_fn,
+            base_params=base_params,
+            output_key="max_concentration",
+            parent=self,
+        )
+        dialog.exec()
 
     def _open_monte_carlo(self):
-        """Open Monte Carlo simulation (placeholder)."""
-        QMessageBox.information(self, "Monte Carlo",
-                                "Monte Carlo simulation will be available in a future update.")
+        """Open Monte Carlo simulation dialog."""
+        from .monte_carlo_dialog import MonteCarloDialog
+        from ..analysis.monte_carlo import Uniform, Normal
+
+        model_fn = self._build_active_model_function()
+        if model_fn is None:
+            QMessageBox.warning(
+                self, "Monte Carlo",
+                "No active scenario to run. Please open a scenario panel first.",
+            )
+            return
+
+        # Default parameter distributions based on active panel
+        params = self._extract_active_panel_distributions()
+
+        dialog = MonteCarloDialog(
+            model_function=model_fn,
+            parameters=params if params else None,
+            output_keys=["max_concentration"],
+            parent=self,
+        )
+        dialog.exec()
+
+    # ── Helper: build model function from active panel ────────────
+
+    def _build_active_model_function(self):
+        """Build a callable model_function(params_dict) -> result from the
+        currently active scenario panel."""
+        active = self._tabs.currentWidget()
+        if active is None:
+            return None
+
+        panel_type = type(active).__name__
+
+        if isinstance(active, SourceTermPanel):
+            from ..models.source_term.orifice import OrificeInput, calculate_orifice
+
+            def fn(params):
+                inp = OrificeInput(**params)
+                return calculate_orifice(inp)
+            return fn
+
+        elif isinstance(active, DispersionPanel):
+            from ..models.dispersion.gaussian_plume import PlumeInput, calculate_plume
+
+            def fn(params):
+                inp = PlumeInput(**params)
+                return calculate_plume(inp)
+            return fn
+
+        elif isinstance(active, FirePanel):
+            from ..models.fire.pool_fire import PoolFireInput, calculate_pool_fire
+
+            def fn(params):
+                inp = PoolFireInput(**params)
+                return calculate_pool_fire(inp)
+            return fn
+
+        elif isinstance(active, ExplosionPanel):
+            from ..models.explosion.tnt_equivalency import TNTInput, calculate_tnt_equivalency
+
+            def fn(params):
+                inp = TNTInput(**params)
+                return calculate_tnt_equivalency(inp)
+            return fn
+
+        return None
+
+    def _extract_active_panel_params(self) -> dict:
+        """Extract base parameters from the currently active panel."""
+        active = self._tabs.currentWidget()
+        if active is None:
+            return {}
+
+        if isinstance(active, SourceTermPanel):
+            return {
+                "Cd": 0.62, "d_hole": 0.025, "P_upstream": 5e5,
+                "P_downstream": 101325, "T": 298.15, "phase": "gas",
+            }
+        elif isinstance(active, DispersionPanel):
+            return {
+                "source_rate": 1.0, "wind_speed": 3.0,
+                "stability_class": "D", "release_height": 0.0,
+            }
+        elif isinstance(active, FirePanel):
+            return {
+                "pool_diameter": 10.0, "substance": "gasoline",
+                "wind_speed": 3.0,
+            }
+        elif isinstance(active, ExplosionPanel):
+            return {
+                "mass_flammable": 1000.0, "heat_of_combustion": 46.4e6,
+            }
+        return {}
+
+    def _extract_active_panel_distributions(self) -> dict:
+        """Extract parameter distributions for Monte Carlo."""
+        from ..analysis.monte_carlo import Uniform, Normal
+
+        active = self._tabs.currentWidget()
+        if active is None:
+            return {}
+
+        if isinstance(active, SourceTermPanel):
+            return {
+                "d_hole": Uniform(0.01, 0.05),
+                "P_upstream": Uniform(3e5, 15e5),
+                "T": Normal(298.15, 10.0),
+            }
+        elif isinstance(active, DispersionPanel):
+            return {
+                "source_rate": Uniform(0.5, 5.0),
+                "wind_speed": Uniform(1.0, 8.0),
+                "release_height": Uniform(0.0, 30.0),
+            }
+        elif isinstance(active, FirePanel):
+            return {
+                "pool_diameter": Uniform(3.0, 20.0),
+                "wind_speed": Uniform(0.0, 8.0),
+            }
+        elif isinstance(active, ExplosionPanel):
+            return {
+                "mass_flammable": Uniform(500.0, 5000.0),
+            }
+        return {}
 
     def _open_substance_db(self):
         """Open the substance database editor (placeholder)."""
