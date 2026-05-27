@@ -3,22 +3,21 @@
 
 Based on a typical onshore natural gas processing facility:
 - Process Area (compressor, separator, columns)
-- Gas Metering & Regulation
 - Storage Tank Farm (condensate)
+- Loading/Unloading Area
 - Utility Area (power gen, instrument air)
-- Pipeline Inlet/Outlet (pigging, valve stations)
+- Pipeline Station (inlet/outlet pigging)
 - Flare & KO Drum
 - Control Room / Admin Building
 
 Layout coordinates (meters):
-  N (y+)
+  N (y+) ↑
   |
   |  [Flare/KO] (100, 120)
-  |  [Utility] (-80, 60)
-  |  [Process] (0, 30)    [Metering] (60, 30)
-  |  [Pipeline] (-40, 0)  [Storage] (80, -20)
-  |  [CtrlRoom] (20, -40)
-  +-----> E (x+)
+  |  [Utility] (-80, 60)     [Process] (0, 30)
+  |  [Pipeline] (-40, 0)     [CtrlRoom] (20, -40)
+  |                          [Storage] (80, -20)  [Loading] (110, -50)
+  +----→ E (x+)
 """
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
@@ -30,42 +29,44 @@ from rekarisk.models.qra.qra_pipeline import (
 
 # ── 7 ISO Sections — Realistic gas plant ─────────────────────────────────
 iso_sections = [
-    # 1. Process Area — high pressure gas processing
+    # 1. Process Area — compressor, separator, glycol contactor, filters, columns
+    #    5 major equipment items, high-pressure natural gas
     IsoSection(name="Process Area", P=60e5, T=320.0,
                volume=8.5, composition="natural_gas", molecular_weight=20.5,
-               fill_fraction=0.0, x=0, y=30, elevation=3.0),
+               fill_fraction=0.0, x=0, y=30, elevation=3.0, n_equipment=5,
+               freq_scale=2.4),
 
-    # 2. Gas Metering & Regulation — moderate pressure
-    IsoSection(name="Metering Station", P=40e5, T=310.0,
-               volume=2.0, composition="natural_gas", molecular_weight=20.5,
-               fill_fraction=0.0, x=60, y=30, elevation=1.5),
-
-    # 3. Condensate Storage — liquid
-    IsoSection(name="Condensate Storage", P=3e5, T=305.0,
+    # 2. Storage Tank Farm — 2 condensate tanks
+    IsoSection(name="Storage Tank Farm", P=3e5, T=305.0,
                volume=500.0, composition="propane", molecular_weight=44.1,
                fill_fraction=0.75, x=80, y=-20, elevation=0.5,
-               rho_liquid=520.0),
+               rho_liquid=520.0, n_equipment=2),
 
-    # 4. Utility Area — fuel gas, instrument air
+    # 3. Loading/Unloading Area — truck loading bay
+    IsoSection(name="Loading Area", P=5e5, T=300.0,
+               volume=2.0, composition="propane", molecular_weight=44.1,
+               fill_fraction=0.5, x=110, y=-50, elevation=0.0,
+               rho_liquid=520.0, n_equipment=1),
+
+    # 4. Utility Area — power generator, instrument air compressor, diesel tank
     IsoSection(name="Utility Area", P=15e5, T=300.0,
                volume=3.0, composition="natural_gas", molecular_weight=20.5,
-               fill_fraction=0.0, x=-80, y=60, elevation=0.0),
+               fill_fraction=0.0, x=-80, y=60, elevation=0.0, n_equipment=2),
 
-    # 5. Pipeline Inlet/Outlet — high pressure transmission
+    # 5. Pipeline Station — inlet pig receiver + outlet pig launcher
     IsoSection(name="Pipeline Station", P=70e5, T=315.0,
                volume=15.0, composition="natural_gas", molecular_weight=20.5,
-               fill_fraction=0.0, x=-40, y=0, elevation=0.0),
+               fill_fraction=0.0, x=-40, y=0, elevation=0.0, n_equipment=2),
 
-    # 6. Flare & KO Drum — intermittent, low pressure
+    # 6. Flare & KO Drum — relief gas, low pressure
     IsoSection(name="Flare KO Drum", P=5e5, T=310.0,
                volume=12.0, composition="natural_gas", molecular_weight=20.5,
                fill_fraction=0.3, x=100, y=120, elevation=15.0),
 
-    # 7. Slug Catcher — liquid + gas
-    IsoSection(name="Slug Catcher", P=65e5, T=318.0,
-               volume=25.0, composition="natural_gas", molecular_weight=22.0,
-               fill_fraction=0.4, x=-30, y=15, elevation=2.0,
-               rho_liquid=600.0),
+    # 7. Control Room/Admin — office buildings, no process equipment
+    IsoSection(name="Control Room", P=1e5, T=300.0,
+               volume=1.0, composition="natural_gas", molecular_weight=20.5,
+               fill_fraction=0.0, x=20, y=-40, elevation=0.0, n_equipment=0),
 ]
 
 # ── Hole Sizes (standard OGP) ────────────────────────────────────────────
@@ -93,10 +94,12 @@ receptors = [
     ReceptorPoint(label="Process Area CPPG South", x=0, y=5),
     ReceptorPoint(label="Control Room NKT", x=20, y=-40),
     ReceptorPoint(label="Control Room CPPG", x=20, y=-30),
-    ReceptorPoint(label="Metering Area", x=60, y=30),
+    ReceptorPoint(label="Storage Tank Farm", x=80, y=-20),
+    ReceptorPoint(label="Loading Area", x=110, y=-50),
     ReceptorPoint(label="Substation Building", x=-10, y=-20),
     ReceptorPoint(label="Utility Area", x=-80, y=60),
-    ReceptorPoint(label="Support Area", x=30, y=-50),
+    ReceptorPoint(label="Pipeline Station", x=-40, y=0),
+    ReceptorPoint(label="Flare Area", x=100, y=120),
     ReceptorPoint(label="Security & Guard West", x=-90, y=-10),
     ReceptorPoint(label="Security & Guard North", x=-60, y=80),
 ]
@@ -104,29 +107,27 @@ receptors = [
 # ── Worker Groups — 60 workers total ──────────────────────────────────────
 workers = [
     WorkerGroup(name="Operator NKT", count=4,
-                locations=[(0, 30, 0.40), (60, 30, 0.15), (20, -40, 0.15), (-80, 60, 0.10), (30, -50, 0.10)]),
+                locations=[(0, 30, 0.40), (80, -20, 0.15), (20, -40, 0.15), (-80, 60, 0.10), (110, -50, 0.10)]),
     WorkerGroup(name="Sr Operator DCS", count=2,
-                locations=[(20, -40, 0.70), (0, 30, 0.15), (60, 30, 0.10)]),
+                locations=[(20, -40, 0.70), (0, 30, 0.15), (80, -20, 0.10)]),
     WorkerGroup(name="Field Operator", count=3,
-                locations=[(0, 30, 0.35), (60, 30, 0.20), (80, -20, 0.15), (-40, 0, 0.15), (-80, 60, 0.10)]),
+                locations=[(0, 30, 0.35), (80, -20, 0.20), (-40, 0, 0.15), (-80, 60, 0.15), (110, -50, 0.10)]),
     WorkerGroup(name="Maintenance Tech", count=3,
-                locations=[(0, 30, 0.25), (-80, 60, 0.25), (80, -20, 0.20), (100, 120, 0.10)]),
-    WorkerGroup(name="Metering Operator", count=2,
-                locations=[(60, 30, 0.50), (0, 30, 0.20), (20, -40, 0.15)]),
+                locations=[(0, 30, 0.25), (-80, 60, 0.25), (80, -20, 0.20), (100, 120, 0.10), (110, -50, 0.10)]),
+    WorkerGroup(name="Loading Operator", count=2,
+                locations=[(110, -50, 0.50), (80, -20, 0.20), (0, 30, 0.15)]),
     WorkerGroup(name="Storage Operator", count=2,
-                locations=[(80, -20, 0.50), (0, 30, 0.15), (-40, 0, 0.15)]),
+                locations=[(80, -20, 0.50), (0, 30, 0.15), (110, -50, 0.15)]),
     WorkerGroup(name="Pipeline Technician", count=2,
                 locations=[(-40, 0, 0.40), (0, 30, 0.20), (-80, 60, 0.15)]),
     WorkerGroup(name="Security Guard", count=4,
                 locations=[(-90, -10, 0.35), (-60, 80, 0.35), (0, 30, 0.10)]),
     WorkerGroup(name="Admin Staff", count=4,
-                locations=[(20, -40, 0.60), (30, -50, 0.20)]),
+                locations=[(20, -40, 0.60), (20, -30, 0.20)]),
     WorkerGroup(name="Utility Operator", count=2,
                 locations=[(-80, 60, 0.50), (0, 30, 0.15), (20, -40, 0.15)]),
     WorkerGroup(name="Flare Operator", count=1,
                 locations=[(100, 120, 0.30), (0, 30, 0.30), (-80, 60, 0.15)]),
-    WorkerGroup(name="Slug Catcher Operator", count=2,
-                locations=[(-30, 15, 0.40), (0, 30, 0.20), (20, -40, 0.15)]),
 ]
 
 # ── Custom shelter factors for this plant ─────────────────────────────────
@@ -136,10 +137,12 @@ shelter = {
     "Process Area CPPG South": 1.0,
     "Control Room NKT": 0.2,
     "Control Room CPPG": 0.2,
-    "Metering Area": 1.0,
+    "Storage Tank Farm": 1.0,
+    "Loading Area": 1.0,
     "Substation Building": 0.3,
     "Utility Area": 0.8,
-    "Support Area": 0.8,
+    "Pipeline Station": 1.0,
+    "Flare Area": 0.8,
     "Security & Guard West": 0.7,
     "Security & Guard North": 0.7,
 }
@@ -168,6 +171,11 @@ def run():
         "Process Area CPPG North": 8.5e-5,
         "Process Area CPPG South": 1.2e-4,
         "Control Room NKT": 3.7e-5,
+        "Storage Tank Farm": 5.0e-5,
+        "Loading Area": 3.0e-5,
+        "Utility Area": 2.0e-5,
+        "Pipeline Station": 4.0e-5,
+        "Flare Area": 1.0e-5,
     }
 
     for (rx, ry), lsir_val in sorted(result.lsir_grid.items(),

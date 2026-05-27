@@ -91,6 +91,8 @@ class IsoSection:
         rho_liquid: Override liquid density [kg/m³].
         molecular_weight: MW override [g/mol].
         cp_cv_ratio: Ratio of specific heats γ (default 1.31).
+        n_equipment: Number of major equipment items in this section;
+            leak frequency is multiplied by this count (default 1).
     """
     name: str
     P: float
@@ -104,6 +106,8 @@ class IsoSection:
     rho_liquid: Optional[float] = None
     molecular_weight: Optional[float] = None
     cp_cv_ratio: float = 1.31
+    n_equipment: int = 1
+    freq_scale: float = 1.0
 
 
 @dataclass
@@ -538,7 +542,7 @@ class QRAPipeline:
         if mdot_avg <= 0:
             return []
 
-        leak_freq = self._leak_freq(hole.name)
+        leak_freq = self._leak_freq(hole.name) * iso.n_equipment * iso.freq_scale
         if leak_freq <= 0:
             return []
 
