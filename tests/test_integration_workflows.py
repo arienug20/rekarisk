@@ -971,3 +971,63 @@ class TestQRA:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# INDONESIA LOCATION DATA TESTS (2)
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestIndonesiaLocations:
+    """Indonesian location weather presets."""
+
+    def test_35_indonesia_oil_gas_locations(self):
+        """TC-35: All oil & gas locations have valid meteorological data."""
+        from rekarisk.models.dispersion.gaussian_plume import PlumeInput, calculate_plume
+        from rekarisk.meteorology.indonesia_locations import (
+            get_locations_by_category, location_to_meteorological_state,
+            INDONESIA_LOCATIONS,
+        )
+
+        oil_gas = get_locations_by_category("oil_gas")
+        assert len(oil_gas) >= 10, f"Expected >= 10 oil&gas locations, got {len(oil_gas)}"
+
+        for loc in oil_gas:
+            # Verify all required fields
+            assert loc["wind_speed_ms"] > 0, f"{loc['name']}: wind speed must be > 0"
+            assert 273 < loc["temperature_k"] < 320, f"{loc['name']}: temp out of range"
+            assert 0 <= loc["humidity_pct"] <= 100, f"{loc['name']}: humidity out of range"
+            assert loc["stability_class"] in "ABCDEF", f"{loc['name']}: invalid stability"
+
+            # Verify it produces a valid MeteorologicalState
+            from rekarisk.meteorology.meteorology import MeteorologicalState
+            state_kwargs = location_to_meteorological_state(loc)
+            state = MeteorologicalState(**state_kwargs)
+            assert state.wind_speed_ms > 0
+
+    def test_36_indonesia_dispersion_at_location(self):
+        """TC-36: Run dispersion at multiple Indonesian locations.
+        Verifies the full chain: location preset → MeteorologicalState → dispersion.
+        """
+        from rekarisk.meteorology.indonesia_locations import (
+            get_location, location_to_meteorological_state,
+        )
+        from rekarisk.meteorology.meteorology import MeteorologicalState
+        from rekarisk.models.dispersion.gaussian_plume import PlumeInput, calculate_plume
+
+        test_locations = ["Cepu", "Bontang", "Lhokseumawe", "Balikpapan"]
+        for loc_name in test_locations:
+            loc = get_location(loc_name)
+            assert loc is not None, f"{loc_name} not found"
+
+            state = MeteorologicalState(**location_to_meteorological_state(loc))
+
+            # Run a quick plume calculation with location weather
+            inp = PlumeInput(
+                source_rate=1.0,
+                wind_speed=state.wind_speed_ms,
+                stability_class=state.stability_class,
+                temperature=state.ambient_temperature_k,
+                pressure=state.ambient_pressure_pa,
+            )
+            result = calculate_plume(inp)
+            assert result.max_concentration > 0, f"No result for {loc_name}"

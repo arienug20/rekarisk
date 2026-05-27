@@ -830,6 +830,39 @@ class WeatherDialog(QDialog):
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
 
+        # ── Indonesia location quick-select ────────────────────────
+        from ..meteorology.indonesia_locations import (
+            get_all_location_names, get_location, location_to_meteorological_state,
+            get_location_categories, INDONESIA_LOCATIONS,
+        )
+
+        loc_group = QGroupBox("📍 Indonesian Location Preset")
+        loc_layout = QHBoxLayout()
+
+        loc_layout.addWidget(QLabel("Category:"))
+        self._loc_category_combo = QComboBox()
+        categories = list(get_location_categories())
+        self._loc_category_combo.addItem("All")
+        self._loc_category_combo.addItems(categories)
+        self._loc_category_combo.currentTextChanged.connect(self._filter_locations_by_category)
+        loc_layout.addWidget(self._loc_category_combo)
+
+        loc_layout.addWidget(QLabel("Location:"))
+        self._loc_combo = QComboBox()
+        self._loc_combo.addItem("— Select Location —")
+        self._loc_combo.addItems(get_all_location_names())
+        self._loc_combo.setMinimumWidth(280)
+        self._loc_combo.currentTextChanged.connect(self._apply_location)
+        loc_layout.addWidget(self._loc_combo)
+
+        self._loc_info_label = QLabel("")
+        self._loc_info_label.setStyleSheet("color: #666; font-style: italic;")
+        loc_layout.addWidget(self._loc_info_label)
+
+        loc_layout.addStretch()
+        loc_group.setLayout(loc_layout)
+        layout.addWidget(loc_group)
+
         # Tab widget
         self.tabs = QTabWidget()
 
@@ -885,6 +918,52 @@ class WeatherDialog(QDialog):
             return wr if wr else WindRoseData()
         else:
             return WindRoseData()
+
+    # ── Indonesia location helpers ────────────────────────────────
+
+    def _filter_locations_by_category(self, category: str) -> None:
+        """Filter the location combo by category."""
+        from ..meteorology.indonesia_locations import (
+            get_all_location_names, get_locations_by_category,
+        )
+
+        self._loc_combo.blockSignals(True)
+        self._loc_combo.clear()
+        self._loc_combo.addItem("\u2014 Select Location \u2014")
+
+        if category == "All":
+            names = get_all_location_names()
+        else:
+            names = sorted(loc["name"] for loc in get_locations_by_category(category))
+
+        self._loc_combo.addItems(names)
+        self._loc_combo.blockSignals(False)
+
+    def _apply_location(self, name: str) -> None:
+        """Apply an Indonesian location preset to the weather dialog."""
+        if not name or name.startswith("\u2014"):
+            self._loc_info_label.setText("")
+            return
+
+        from ..meteorology.indonesia_locations import get_location, location_to_meteorological_state
+
+        loc = get_location(name)
+        if loc is None:
+            self._loc_info_label.setText("Location not found")
+            return
+
+        # Update info label
+        self._loc_info_label.setText(
+            f"{loc['province']} | {loc['lat']:.2f}\u00b0, {loc['lon']:.2f}\u00b0 | "
+            f"Elev. {loc['elevation_m']}m | {loc['notes']}"
+        )
+
+        # Apply to SingleWeatherTab
+        state_kwargs = location_to_meteorological_state(loc)
+        from ..meteorology.meteorology import MeteorologicalState
+        state = MeteorologicalState(**state_kwargs)
+        self.single_tab.set_state(state)
+        self.tabs.setCurrentIndex(0)  # Switch to Single Weather tab
 
     def _save_preset(self) -> None:
         """Save current configuration as a JSON preset."""
