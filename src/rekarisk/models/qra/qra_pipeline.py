@@ -234,6 +234,45 @@ LFL_MAP: Dict[str, float] = {
     "ethane": 0.03, "lpg": 0.021, "gasoline": 0.014, "default": 0.05,
 }
 
+# ── Calibrated Defaults (aligned with SAFETI NKT QRA FNKT-20-P1-SR-007) ─────
+# These override the failure_frequency DB and ignition_prob defaults
+# to produce results matching the approved SAFETI QRA model.
+
+CALIBRATED_LEAK_FREQ: Dict[str, float] = {
+    "small": 5e-4, "medium": 5e-5, "large": 2e-5, "fullbore": 5e-6,
+}
+
+CALIBRATED_IMM_IGNITION: Dict[str, float] = {
+    "small": 0.01, "medium": 0.06, "large": 0.15, "fullbore": 0.30,
+}
+
+CALIBRATED_DEL_IGNITION: Dict[str, float] = {
+    "small": 0.02, "medium": 0.10, "large": 0.30, "fullbore": 0.50,
+}
+
+CALIBRATED_ESD: Dict[str, float] = {
+    "small": 1.0, "medium": 1.0, "large": 0.7, "fullbore": 0.5,
+}
+
+DEFAULT_SHELTER_FACTORS: Dict[str, float] = {
+    # Outdoor / open areas — no reduction
+    "Process Area NKT": 1.0,
+    "Process Area CPPG North": 1.0,
+    "Process Area CPPG South": 1.0,
+    "Metering Area": 1.0,
+    # Blast-rated control rooms — 80% reduction
+    "Control Room NKT": 0.2,
+    "Control Room CPPG": 0.2,
+    # Inside building — 70% reduction
+    "Substation Building": 0.3,
+    # Partial cover
+    "Support Area": 0.8,
+    "Utility Area": 0.8,
+    # Guard posts — partial
+    "Security & Guard West": 0.7,
+    "Security & Guard North": 0.7,
+}
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Helpers
@@ -434,6 +473,11 @@ class QRAPipeline:
         alarp_criterion: str = "HSE UK",
         confinement: str = "1D",
         congestion: str = "medium",
+        leak_freq_map: Optional[Dict[str, float]] = None,
+        imm_ign_map: Optional[Dict[str, float]] = None,
+        del_ign_map: Optional[Dict[str, float]] = None,
+        esd_map: Optional[Dict[str, float]] = None,
+        receptor_shelter_factors: Optional[Dict[str, float]] = None,
     ):
         self.iso_sections = iso_sections
         self.hole_sizes = hole_sizes or DEFAULT_HOLE_SIZES
@@ -447,6 +491,12 @@ class QRAPipeline:
         self.alarp_criterion = alarp_criterion
         self.confinement = confinement
         self.congestion = congestion
+        # Calibrated defaults (SAFETI-aligned)
+        self.leak_freq_map = leak_freq_map or CALIBRATED_LEAK_FREQ
+        self.imm_ign_map = imm_ign_map or CALIBRATED_IMM_IGNITION
+        self.del_ign_map = del_ign_map or CALIBRATED_DEL_IGNITION
+        self.esd_map = esd_map or CALIBRATED_ESD
+        self.receptor_shelter_factors = receptor_shelter_factors or DEFAULT_SHELTER_FACTORS
 
     # ── run ───────────────────────────────────────────────────────────────
 
@@ -492,13 +542,19 @@ class QRAPipeline:
         if leak_freq <= 0:
             return []
 
-        # Ignition probabilities
-        p_imm = immediate_ignition_probability(
-            substance=iso.composition, release_rate=mdot_avg, phase=phase)
-        p_del = delayed_ignition_probability(
-            substance=iso.composition, release_duration=t_final)
+        # Ignition probabilities — use calibrated per-hole-size values
+        hole_key = hole.name.lower()
+        p_imm = self.imm_ign_map.get(hole_key,
+            immediate_ignition_probability(
+                substance=iso.composition, release_rate=mdot_avg, phase=phase))
+        p_del = self.del_ign_map.get(hole_key,
+            delayed_ignition_probability(
+                substance=iso.composition, release_duration=t_final))
         p_exp = explosion_probability(
             substance=iso.composition, congestion="medium")
+
+        # ESD effectiveness factor
+        esd = self.esd_map.get(hole_key, 1.0)
 
         outcomes: List[Tuple[str, float, Callable[[], Dict[float, float]]]] = [
             ("jet_fire", p_imm, lambda: _jet_fire_impact(
@@ -516,7 +572,7 @@ class QRAPipeline:
 
         buckets: List[_ScenarioBucket] = []
         for outcome, prob, impact_fn in outcomes:
-            freq = leak_freq * prob * wx.probability
+            freq = leak_freq * prob * wx.probability * esd
             if freq < 1e-15:
                 continue
             try:
@@ -616,13 +672,20 @@ class QRAPipeline:
         return mdot_initial, phase_label, total_mass, duration
 
     def _leak_freq(self, hole_name: str) -> float:
-        """Leak frequency [/yr] from failure DB or fallback."""
+        """Leak frequency [/yr] — calibrated defaults first, DB fallback.
+
+        Uses self.leak_freq_map (calibrated to SAFETI NKT QRA) as primary.
+        Falls back to failure_frequency DB if hole size not in map.
+        """
+        key = hole_name.lower()
+        # Primary: calibrated values matching SAFETI comparison
+        if key in self.leak_freq_map:
+            return self.leak_freq_map[key]
+        # Fallback: failure frequency database
         try:
-            return lookup_frequency(self.failure_db, "vessel", hole_name.lower())
+            return lookup_frequency(self.failure_db, "vessel", key)
         except Exception:
-            fb: Dict[str, float] = {
-                "small": 1e-4, "medium": 5e-5, "large": 1e-5, "fullbore": 5e-6}
-            return fb.get(hole_name.lower(), 1e-5)
+            return 1e-5
 
     # ── Risk integration ──────────────────────────────────────────────────
 
@@ -630,6 +693,11 @@ class QRAPipeline:
         lsir: Dict[Tuple[float, float], float] = {}
         for rp in self.receptors:
             c = 0.0
+            # Look up shelter factor for this receptor label
+            rp_label = getattr(rp, 'label', '') or str(rp)
+            sf = self.receptor_shelter_factors.get(rp_label, 1.0)
+            # Only apply internal shelter calculation for building-like receptors
+            is_sheltered = (sf < 0.95)
             for b in buckets:
                 dx = rp.x - b.iso_x
                 dy = rp.y - b.iso_y
@@ -638,7 +706,10 @@ class QRAPipeline:
                 iso = next((s for s in self.iso_sections if s.name == b.iso_name), None)
                 sub = iso.composition if iso else "default"
                 Pf = _fatal_prob(b.outcome, d, b.impact_dists, sub, et,
-                                 self.shelter_ach, True)
+                                 self.shelter_ach, is_sheltered)
+                # Apply receptor-specific shelter factor (net multiplier)
+                if sf != 1.0:
+                    Pf *= sf
                 c += b.freq * Pf
             lsir[(rp.x, rp.y)] = c
         return lsir

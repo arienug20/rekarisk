@@ -1298,7 +1298,7 @@ def distance_to_thresholds_jet_multipoint(
     thresholds: Optional[List[float]] = None,
     max_search_distance: float = 500.0,
     n_segments: int = 10,
-    model: str = "solid_flame",
+    model: str = "multipoint",
 ) -> Dict[float, float]:
     """Find distances to thermal radiation thresholds using solid flame
     or multi-point source model.
@@ -1389,7 +1389,7 @@ def distance_to_thresholds_jet_multipoint(
 
 def calculate_jet_fire(
     input_data: JetFireInput,
-    model: str = "solid_flame",
+    model: str = "multipoint",
     min_distance: float = 1.0,
     max_distance: float = 200.0,
     n_points: int = 200,
