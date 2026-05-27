@@ -818,8 +818,13 @@ class MainWindow(QMainWindow):
         )
 
         # Pre-fill from last source term (for jet fire)
-        # TODO: FirePanel needs set_source_params() method to auto-fill from source term
-        # For now, user needs to manually enter values
+        if self._last_source_term_result:
+            st = self._last_source_term_result
+            panel.set_source_params(
+                orifice_diameter=st.get("hole_diameter", 0.05),
+                mass_flow_rate=st.get("mass_flow_rate", 0),
+                discharge_velocity=st.get("exit_velocity", 0),
+            )
 
         idx = self.add_central_tab(widget, label)
         self._active_panels[label] = widget
@@ -865,6 +870,14 @@ class MainWindow(QMainWindow):
         panel.calculation_requested.connect(
             lambda params: self._execute_vulnerability(params, results)
         )
+
+        # Pre-fill intensity from previous results
+        if self._last_dispersion_result:
+            panel.set_intensity_data('dispersion', self._last_dispersion_result)
+        elif self._last_fire_result:
+            panel.set_intensity_data('fire', self._last_fire_result)
+        elif self._last_explosion_result:
+            panel.set_intensity_data('explosion', self._last_explosion_result)
 
         idx = self.add_central_tab(widget, label)
         self._active_panels[label] = widget

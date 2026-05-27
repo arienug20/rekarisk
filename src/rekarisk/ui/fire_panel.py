@@ -604,6 +604,21 @@ class FirePanel(QWidget):
 
         return errors
 
+    def set_source_params(self, **kwargs):
+        """Pre-fill jet fire tab from source term results.
+
+        Keyword Args:
+            orifice_diameter: Hole diameter [m]
+            mass_flow_rate: Mass flow rate [kg/s]
+            discharge_velocity: Exit velocity [m/s]
+        """
+        if 'orifice_diameter' in kwargs:
+            self._jet_tab.orifice_diameter.setValue(kwargs['orifice_diameter'])
+        if 'mass_flow_rate' in kwargs and kwargs['mass_flow_rate'] is not None:
+            self._jet_tab.mass_flow_rate.setValue(kwargs['mass_flow_rate'])
+        if 'discharge_velocity' in kwargs:
+            self._jet_tab.discharge_velocity.setValue(kwargs['discharge_velocity'])
+
     def set_progress_visible(self, visible: bool):
         """Show or hide the progress bar."""
         self.progress.setVisible(visible)
