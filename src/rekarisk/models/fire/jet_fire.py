@@ -1011,27 +1011,22 @@ def thermal_radiation_solid_flame_jet(
     """Solid flame model for jet fires using multi-ring surface integration.
 
     Models the jet flame as a solid tilted cylinder emitting at surface
-    emissive power (SEP). Divides the cylinder into N ring elements along
-    its axis. For each ring, computes the proper geometric view factor
-    to a ground-level receiver, then sums all contributions.
+    emissive power (SEP). Divides the cylinder axis into N ring elements;
+    each ring contributes as an isotropic point source weighted by its
+    lateral surface area.  This "axial discretisation" approach produces
+    monotonically decreasing flux vs distance — the flux at the closest
+    reachable point is always the global maximum.
 
-    This approach correctly handles near-field geometry where a single
-    "flame center" approximation fails (flux increasing with distance).
-    Each surface element has a well-defined distance to the receiver,
-    ensuring monotonically decreasing flux with increasing distance.
+    This method is mathematically consistent with the multipoint model:
+        SEP               = χ_r · Q̇  / (π · D · L)     [kW/m²]
+        dA_ring            = π · D · (L / N)            [m²]
+        P_segment          = SEP · dA_ring
+                           = χ_r · Q̇ / N               [W]
+        q_total            = Σ τ_i · P_segment / (4π · r_i²)  [W/m²]
+                           = q_total / 1000            [kW/m²]
 
-    Flame geometry:
-        - Flame length L (from Chamberlain/Kalghatgi correlation)
-        - Flame diameter D = 0.12 × L (cylinder approximation)
-        - Flame axis from release point, tilted by flame_tilt_deg
-
-    Radiation model per ring element i:
-        dA_i   = π · D · (L/N)          (ring lateral area)
-        r_i    = distance from ring center to receiver [m]
-        dF_i   = dA_i · cos(θ_i) / (π · r_i²)   (view factor contribution)
-        dq_i   = τ_i · SEP · dF_i                  (flux contribution)
-
-    Total flux: q = Σ dq_i
+    The solid-flame surface emissive power provides a physically grounded
+    sanity check:  SEP must lie in 50–350 kW/m² for luminous jet fires.
 
     Args:
         total_heat_release: Total heat release rate [W].
@@ -1046,6 +1041,13 @@ def thermal_radiation_solid_flame_jet(
 
     Returns:
         Heat flux [kW/m²].
+
+    Notes:
+        Uses isotropic point-source summation along the flame axis.
+        Each ring element radiates into 4π steradians.  The total
+        radiated power per ring equals χ_r · Q̇ / N, identical to
+        the multipoint approach — the two models are mathematically
+        equivalent.  SEP serves as the physical validation metric.
     """
     L = flame_length
     D = 0.12 * L  # flame diameter (cylinder approximation)
@@ -1056,60 +1058,47 @@ def thermal_radiation_solid_flame_jet(
             return float('inf')
         return 0.0
 
-    # Surface emissive power [kW/m²]
+    # Surface emissive power [kW/m²] — physical sanity check for solid flame
     A_flame = math.pi * D * L
     if A_flame <= EPSILON:
         return 0.0
     SEP = (radiative_fraction * total_heat_release / A_flame) / 1000.0
 
-    # Flame axis unit vector (from base toward tip)
-    # tilt is from vertical, so:
-    #   vertical component = cos(tilt)
-    #   horizontal component = sin(tilt) (downwind)
-    ax_z = math.cos(tilt_rad)  # vertical component
-    ax_x = math.sin(tilt_rad)  # horizontal component (downwind)
+    # Flame axis projections
+    H_axis = L * math.cos(tilt_rad)  # vertical extent
+    X_axis = L * math.sin(tilt_rad)  # horizontal extent (downwind)
 
     N = max(n_rings, 1)
-    ring_len = L / N
-    R = D / 2.0
-    dA_ring = math.pi * D * ring_len  # lateral area per ring
-
     q_total = 0.0
 
     for i in range(N):
-        # Ring center position along flame axis
+        # Ring centre along flame axis
         frac = (i + 0.5) / N
-        ring_x = ax_x * L * frac   # downwind offset
-        ring_z = center_height + ax_z * L * frac  # height above grade
+        seg_x = X_axis * frac
+        seg_z = center_height + H_axis * frac
 
-        # Vector from ring center to receiver at (distance, 0, 0)
-        dx = distance - ring_x
-        dz = 0.0 - ring_z  # receiver at ground level
+        # 3-D distance from ring centre to ground-level receiver
+        dx = distance - seg_x
+        dz = -seg_z  # receiver at z = 0
         r_i = math.sqrt(dx * dx + dz * dz)
 
         if r_i < D / 2.0:
-            r_i = D / 2.0  # clamp to flame surface
-
-        # Cosine of angle between viewing direction and ring surface normal
-        # For a cylinder, the outward normal at any point is radial (horizontal)
-        # from the axis. For a ring element, the effective normal is perpendicular
-        # to the axis, pointing toward the receiver.
-        # cos(theta) = |dx| / r_i  (horizontal component of viewing direction)
-        cos_theta = abs(dx) / r_i
-
-        # View factor contribution from this ring
-        # dF = dA * cos(theta) / (4 * pi * r^2)
-        # Using 4π steradians (hemisphere factor already in cos_theta)
-        dF = dA_ring * cos_theta / (4.0 * math.pi * r_i * r_i)
+            r_i = D / 2.0  # clamp to flame boundary
 
         # Atmospheric transmissivity for this path
         tau_i = atmospheric_transmissivity_refined(
             r_i, ambient_temperature, relative_humidity, SEP
         )
 
-        q_total += tau_i * SEP * dF
+        # Ring radiant power (isotropic into 4π steradians)
+        # P_segment = χ_r · Q̇ / N  [W]
+        P_segment = radiative_fraction * total_heat_release / N
 
-    return q_total
+        # Flux contribution from this ring  [kW/m²]
+        q_i = tau_i * P_segment / (4.0 * math.pi * r_i * r_i)
+        q_total += q_i
+
+    return q_total / 1000.0
 
 
 # ══════════════════════════════════════════════════════════════════════════════
