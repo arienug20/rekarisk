@@ -127,6 +127,25 @@ class DispersionPanel(QWidget):
         params.update(self._advanced_tab.get_params())
         return params
 
+    def set_substance(self, substance) -> None:
+        """Pre-fill source tab from a Substance database entry."""
+        is_gas = getattr(substance, 'is_gas_at_ambient', False)
+
+        # Phase
+        self._source_tab.phase_combo.blockSignals(True)
+        self._source_tab.phase_combo.setCurrentText("gas" if is_gas else "liquid")
+        self._source_tab.phase_combo.blockSignals(False)
+
+        # Cloud density
+        rho = substance.vapor_density if is_gas else substance.liquid_density
+        if rho is not None:
+            self._source_tab.cloud_density_spin.setValue(rho)
+
+        # Molecular weight (widget expects g/mol — same as DB)
+        mw = getattr(substance, 'molecular_weight', None)
+        if mw is not None:
+            self._source_tab.mw_spin.setValue(mw)
+
     def set_source_params(self, **kwargs):
         """Set source parameters from external data (e.g., source term result)."""
         self._source_tab.set_params(**kwargs)

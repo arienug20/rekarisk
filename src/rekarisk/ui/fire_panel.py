@@ -604,6 +604,43 @@ class FirePanel(QWidget):
 
         return errors
 
+    def set_substance(self, substance) -> None:
+        """Pre-fill all fire tabs from a Substance database entry."""
+        name_lower = getattr(substance, 'name', '').lower()
+
+        # Helper: try to match substance name in a combo
+        def _set_combo(combo, name):
+            combo.blockSignals(True)
+            # Try exact match first
+            idx = combo.findText(name)
+            if idx < 0:
+                # Try partial match
+                for i in range(combo.count()):
+                    if name in combo.itemText(i) or combo.itemText(i) in name:
+                        idx = i
+                        break
+            if idx >= 0:
+                combo.setCurrentIndex(idx)
+            combo.blockSignals(False)
+
+        # Pool Fire
+        _set_combo(self._pool_tab.substance, name_lower)
+
+        # Jet Fire
+        _set_combo(self._jet_tab.jet_substance, name_lower)
+
+        # BLEVE
+        _set_combo(self._bleve_tab.bleve_substance, name_lower)
+
+        # Flash Fire — substance combo + LFL/UFL
+        _set_combo(self._flash_tab.ff_substance, name_lower)
+        lfl = getattr(substance, 'lower_flammability_limit', None)
+        if lfl is not None:
+            self._flash_tab.lfl_value.setValue(lfl)
+        ufl = getattr(substance, 'upper_flammability_limit', None)
+        if ufl is not None:
+            self._flash_tab.ufl_value.setValue(ufl)
+
     def set_source_params(self, **kwargs):
         """Pre-fill jet fire tab from source term results.
 

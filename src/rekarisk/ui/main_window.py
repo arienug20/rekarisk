@@ -691,11 +691,14 @@ class MainWindow(QMainWindow):
 
         # Check by tree item type (stored in UserRole data)
         item_type_int = data.get("item_type")
+        from .project_panel import ITEM_WEATHER
+
         type_int_map = {
             ITEM_SCENARIO_SOURCE_TERM: self._open_source_term_panel,
             ITEM_SCENARIO_DISPERSION: self._open_dispersion_panel,
             ITEM_SCENARIO_FIRE: self._open_fire_panel,
             ITEM_SCENARIO_EXPLOSION: self._open_explosion_panel,
+            ITEM_WEATHER: self._open_weather_config,
         }
         if item_type_int in type_int_map:
             type_int_map[item_type_int]()
@@ -1471,6 +1474,48 @@ class MainWindow(QMainWindow):
         panel.set_results(results)
         idx = self.add_central_tab(panel, "\U0001f4ca Case Comparison")
         self.statusBar().showMessage("Case comparison ready", 3000)
+
+    def _open_weather_config(self):
+        """Open weather configuration dialog and apply to active dispersion panel."""
+        from .weather_dialog import WeatherDialog
+        from ..meteorology.meteorology import MeteorologicalState
+
+        dialog = WeatherDialog(self)
+        if dialog.exec() == WeatherDialog.DialogCode.Accepted:
+            state = dialog.get_meteorological_state()
+            # Apply to active dispersion panel if open
+            active = self._tabs.currentWidget()
+            if active and hasattr(active, 'panel') and hasattr(active.panel, 'set_weather_params'):
+                active.panel.set_weather_params(
+                    wind_speed=state.wind_speed_ms,
+                    wind_direction=state.wind_direction_deg,
+                    ambient_temperature=state.ambient_temperature_k,
+                    stability_class=state.stability_class,
+                    relative_humidity=state.relative_humidity_pct,
+                    ambient_pressure=state.ambient_pressure_pa,
+                )
+                self.statusBar().showMessage(
+                    f"Weather applied: {state.wind_speed_ms} m/s, Stability {state.stability_class}",
+                    5000,
+                )
+            else:
+                self.statusBar().showMessage(
+                    f"Weather saved: {state.wind_speed_ms} m/s, Stability {state.stability_class}. "
+                    f"Open a Dispersion panel to apply.",
+                    5000,
+                )
+
+            # Store in project data
+            self._project_data["weather_data"]["last_state"] = {
+                "wind_speed_ms": state.wind_speed_ms,
+                "wind_direction_deg": state.wind_direction_deg,
+                "temperature_k": state.ambient_temperature_k,
+                "pressure_pa": state.ambient_pressure_pa,
+                "humidity_pct": state.relative_humidity_pct,
+                "stability_class": state.stability_class,
+                "surface_roughness_m": state.surface_roughness_m,
+            }
+            self.set_dirty()
 
     def _open_batch_runner(self):
         """Open the batch runner dialog."""

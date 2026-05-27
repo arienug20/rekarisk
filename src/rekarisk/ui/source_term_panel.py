@@ -90,6 +90,20 @@ class SourceTermPanel(QWidget):
         calc_type, tab = tab_map.get(idx, ("orifice", self._orifice_tab))
         return calc_type, tab.get_params()
 
+    def set_substance(self, substance) -> None:
+        """Pre-fill the active tab from a Substance database entry."""
+        idx = self.tabs.currentIndex()
+        tab_map = {
+            0: self._orifice_tab,
+            1: self._vessel_tab,
+            2: self._pipe_tab,
+            3: self._psv_tab,
+            4: self._pool_tab,
+        }
+        tab = tab_map.get(idx)
+        if tab and hasattr(tab, 'set_substance'):
+            tab.set_substance(substance)
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Orifice Tab
@@ -199,6 +213,28 @@ class OrificeTab(QWidget):
             "h_liquid_head": self.head_input.value(),
             "duration": self.duration_input.value() if self.duration_input.value() > 0 else None,
         }
+
+    def set_substance(self, substance) -> None:
+        """Pre-fill fields from a Substance database entry."""
+        is_gas = getattr(substance, 'is_gas_at_ambient', False)
+
+        # Phase
+        self.phase_combo.blockSignals(True)
+        self.phase_combo.setCurrentText("gas" if is_gas else "liquid")
+        self.phase_combo.blockSignals(False)
+
+        # Density
+        rho = substance.vapor_density if is_gas else substance.liquid_density
+        if rho is not None:
+            self.rho_input.setValue(rho)
+
+        # Molecular weight (DB g/mol → widget kg/mol)
+        mw = getattr(substance, 'molecular_weight', None)
+        if mw is not None:
+            self.mw_input.setValue(mw / 1000.0)
+
+        # Cp/Cv default
+        self.k_input.setValue(1.4)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -317,6 +353,16 @@ class VesselTab(QWidget):
             "rho_liquid": self.rho_l.value(),
         }
 
+    def set_substance(self, substance) -> None:
+        """Pre-fill fields from a Substance database entry."""
+        mw = getattr(substance, 'molecular_weight', None)
+        if mw is not None:
+            self.mw_vessel.setValue(mw / 1000.0)
+
+        rho_l = getattr(substance, 'liquid_density', None)
+        if rho_l is not None:
+            self.rho_l.setValue(rho_l)
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Pipe Tab
@@ -422,6 +468,23 @@ class PipeTab(QWidget):
             "Cd": self.cd_pipe.value(),
         }
 
+    def set_substance(self, substance) -> None:
+        """Pre-fill fields from a Substance database entry."""
+        is_gas = getattr(substance, 'is_gas_at_ambient', False)
+
+        rho = substance.vapor_density if is_gas else substance.liquid_density
+        if rho is not None:
+            self.rho_pipe.setValue(rho)
+
+        mw = getattr(substance, 'molecular_weight', None)
+        if mw is not None:
+            self.mw_pipe.setValue(mw / 1000.0)
+
+        # Fluid type
+        self.fluid_combo.blockSignals(True)
+        self.fluid_combo.setCurrentText("gas" if is_gas else "liquid")
+        self.fluid_combo.blockSignals(False)
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PSV (Relief Valve) Tab
@@ -526,6 +589,18 @@ class PSVTab(QWidget):
             "rupture_disk_used": self.rd_check.isChecked(),
         }
 
+    def set_substance(self, substance) -> None:
+        """Pre-fill fields from a Substance database entry."""
+        mw = getattr(substance, 'molecular_weight', None)
+        if mw is not None:
+            self.mw_psv.setValue(mw / 1000.0)
+
+        is_gas = getattr(substance, 'is_gas_at_ambient', False)
+        if not is_gas:
+            rho_l = getattr(substance, 'liquid_density', None)
+            if rho_l is not None:
+                self.rho_psv.setValue(rho_l)
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Pool Tab
@@ -624,3 +699,21 @@ class PoolTab(QWidget):
             "vapor_pressure": self.pvap_pool.value(),
             "molecular_weight": self.mw_pool.value(),
         }
+
+    def set_substance(self, substance) -> None:
+        """Pre-fill fields from a Substance database entry."""
+        self.substance_input.blockSignals(True)
+        self.substance_input.setText(getattr(substance, 'name', 'generic'))
+        self.substance_input.blockSignals(False)
+
+        rho_l = getattr(substance, 'liquid_density', None)
+        if rho_l is not None:
+            self.rho_pool.setValue(rho_l)
+
+        mw = getattr(substance, 'molecular_weight', None)
+        if mw is not None:
+            self.mw_pool.setValue(mw / 1000.0)
+
+        bp = getattr(substance, 'normal_boiling_point', None)
+        if bp is not None:
+            self.tboil_pool.setValue(bp)

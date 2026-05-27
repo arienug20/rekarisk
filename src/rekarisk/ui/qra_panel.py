@@ -825,6 +825,14 @@ class QRAPanel(QWidget):
             return
         self.calculate_requested.emit()
 
+    def set_substance(self, substance) -> None:
+        """Pre-fill from a Substance database entry.
+
+        QRA panel doesn't have direct substance fields; this is a no-op
+        placeholder so the dispatch in main_window works without errors.
+        """
+        pass
+
     def get_event_tree(self) -> Optional[EventTree]:
         return self._event_tree_tab.get_event_tree()
 
