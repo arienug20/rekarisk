@@ -86,13 +86,17 @@ class IsoSection:
         volume: Total volume [m³].
         fill_fraction: 0–1 liquid fill; drives phase determination.
         composition: Substance key (e.g. 'propane', 'methane').
-        x, y: Coordinates of the section [m].
+        x, y: Coordinates of the section center [m].
         elevation: Release height above grade [m].
         rho_liquid: Override liquid density [kg/m³].
         molecular_weight: MW override [g/mol].
         cp_cv_ratio: Ratio of specific heats γ (default 1.31).
         n_equipment: Number of major equipment items in this section;
             leak frequency is multiplied by this count (default 1).
+        freq_scale: Additional frequency multiplier (default 1.0).
+        sub_sources: Optional list of (x, y) sub-source coordinates.
+            If provided, scenarios are split equally among sub-sources
+            for spatially distributed risk calculation.
     """
     name: str
     P: float
@@ -108,6 +112,7 @@ class IsoSection:
     cp_cv_ratio: float = 1.31
     n_equipment: int = 1
     freq_scale: float = 1.0
+    sub_sources: Optional[List[Tuple[float, float]]] = None
 
 
 @dataclass
@@ -241,21 +246,32 @@ LFL_MAP: Dict[str, float] = {
 # ── Calibrated Defaults (aligned with SAFETI NKT QRA FNKT-20-P1-SR-007) ─────
 # These override the failure_frequency DB and ignition_prob defaults
 # to produce results matching the approved SAFETI QRA model.
+#
+# Leak frequencies are per-equipment-item per year.
+# SAFETI typical: small 1e-3, medium 1e-4, large 5e-5, fullbore 1e-5
+# Multiplied by n_equipment per ISO section.
 
 CALIBRATED_LEAK_FREQ: Dict[str, float] = {
-    "small": 5e-4, "medium": 5e-5, "large": 2e-5, "fullbore": 5e-6,
+    "small": 5.0e-4, "medium": 5.0e-5, "large": 2.0e-5, "fullbore": 5.0e-6,
 }
 
+# Immediate ignition: probability that leak ignites within seconds
+# Based on Cox/Lees/Ang (HSE) — increases with hole size
 CALIBRATED_IMM_IGNITION: Dict[str, float] = {
-    "small": 0.01, "medium": 0.06, "large": 0.15, "fullbore": 0.30,
+    "small": 0.02, "medium": 0.08, "large": 0.20, "fullbore": 0.40,
 }
 
+# Delayed ignition: probability of ignition after cloud formation
+# Depends on congested area, ignition sources, gas detection
 CALIBRATED_DEL_IGNITION: Dict[str, float] = {
-    "small": 0.02, "medium": 0.10, "large": 0.30, "fullbore": 0.50,
+    "small": 0.03, "medium": 0.12, "large": 0.35, "fullbore": 0.55,
 }
 
+# ESD effectiveness: fraction of leak rate that reaches environment
+# (1.0 = no ESD benefit; lower = more gas captured)
+# SAFETI typical: small leaks often undetected, large leaks partially isolated
 CALIBRATED_ESD: Dict[str, float] = {
-    "small": 1.0, "medium": 1.0, "large": 0.7, "fullbore": 0.5,
+    "small": 1.0, "medium": 0.9, "large": 0.6, "fullbore": 0.4,
 }
 
 DEFAULT_SHELTER_FACTORS: Dict[str, float] = {
@@ -264,17 +280,19 @@ DEFAULT_SHELTER_FACTORS: Dict[str, float] = {
     "Process Area CPPG North": 1.0,
     "Process Area CPPG South": 1.0,
     "Metering Area": 1.0,
-    # Blast-rated control rooms — 80% reduction
-    "Control Room NKT": 0.2,
-    "Control Room CPPG": 0.2,
-    # Inside building — 70% reduction
-    "Substation Building": 0.3,
-    # Partial cover
+    "Pipeline Station": 1.0,
+    "Loading Area": 1.0,
+    "Utility Area": 1.0,
+    "Storage Tank Farm": 1.0,
+    "Flare Area": 1.0,
     "Support Area": 0.8,
-    "Utility Area": 0.8,
+    "Substation Building": 0.5,
+    # Blast-rated control rooms — 50% reduction (conservative for QRA)
+    "Control Room NKT": 0.5,
+    "Control Room CPPG": 0.5,
     # Guard posts — partial
-    "Security & Guard West": 0.7,
-    "Security & Guard North": 0.7,
+    "Security & Guard West": 0.8,
+    "Security & Guard North": 0.8,
 }
 
 
@@ -560,39 +578,88 @@ class QRAPipeline:
         # ESD effectiveness factor
         esd = self.esd_map.get(hole_key, 1.0)
 
+        # ── Phase-dependent outcome probabilities (SAFETI-aligned) ──────
+        #
+        # Gas release event tree (no pool fire possible):
+        #   Immediate ignition  → Jet fire
+        #   Delayed ignition    → Flash fire (or Explosion if congested)
+        #   No ignition         → Safe dispersion (negligible toxic for HC gas)
+        #
+        # Liquid / two-phase release event tree:
+        #   Immediate ignition  → Pool fire (or Jet fire for pressurized liquid)
+        #   Delayed ignition    → Flash fire (or Explosion if congested)
+        #   No ignition         → Toxic / safe dispersion
+        #
+        is_gas = (iso.fill_fraction < 0.1)
+        is_liquid = (iso.fill_fraction > 0.5)
+        is_two_phase = (not is_gas and not is_liquid)
+
+        if is_gas:
+            # Gas: no pool fire possible
+            p_pool = 0.0
+            p_jet = p_imm  # immediate ignition → jet fire
+            p_flash = (1 - p_imm) * p_del * (1 - p_exp)
+            p_explosion = (1 - p_imm) * p_del * p_exp
+            # Toxic: negligible for methane/ethane (non-toxic at LFL levels)
+            # H2S-containing gas gets higher toxic probability
+            sub_lower = iso.composition.lower()
+            if sub_lower in ("methane", "ethane", "natural gas"):
+                p_toxic = (1 - p_imm) * (1 - p_del) * 0.001  # essentially zero
+            else:
+                p_toxic = (1 - p_imm) * (1 - p_del) * 0.03
+        elif is_liquid:
+            # Liquid: pool fire is dominant thermal hazard
+            p_jet = 0.0  # no jet fire for liquid
+            p_pool = p_imm  # immediate ignition → pool fire
+            p_flash = (1 - p_imm) * p_del * (1 - p_exp)
+            p_explosion = (1 - p_imm) * p_del * p_exp
+            p_toxic = (1 - p_imm) * (1 - p_del) * 0.10  # evaporating pool
+        else:
+            # Two-phase: both jet and pool fire possible
+            p_jet = p_imm * 0.7   # most immediate ign → jet fire
+            p_pool = p_imm * 0.3  # some → pool fire (liquid rainout)
+            p_flash = (1 - p_imm) * p_del * (1 - p_exp)
+            p_explosion = (1 - p_imm) * p_del * p_exp
+            p_toxic = (1 - p_imm) * (1 - p_del) * 0.05
+
         outcomes: List[Tuple[str, float, Callable[[], Dict[float, float]]]] = [
-            ("jet_fire", p_imm, lambda: _jet_fire_impact(
+            ("jet_fire", p_jet, lambda: _jet_fire_impact(
                 mdot_avg, hole.diameter, iso.composition, wx, iso.elevation)),
-            ("pool_fire", (1 - p_imm) * 0.15, lambda: _pool_fire_impact(
+            ("pool_fire", p_pool, lambda: _pool_fire_impact(
                 mdot_avg, iso.composition, wx)),
-            ("flash_fire", (1 - p_imm) * p_del * (1 - p_exp), lambda: {
+            ("flash_fire", p_flash, lambda: {
                 "LFL_half": _flash_fire_impact(mdot_avg, iso.composition, wx,
                                                hole.diameter, t_final)}),
-            ("explosion", (1 - p_imm) * p_del * p_exp, lambda: _vce_impact(
+            ("explosion", p_explosion, lambda: _vce_impact(
                 0.1 * total_mass, iso.composition, self.confinement, self.congestion)),
-            ("toxic", (1 - p_imm) * (1 - p_del) * 0.05, lambda: self._toxic_lambda(
+            ("toxic", p_toxic, lambda: self._toxic_lambda(
                 mdot_avg, iso.composition, wx, total_mass, t_final)),
         ]
 
-        buckets: List[_ScenarioBucket] = []
-        for outcome, prob, impact_fn in outcomes:
-            freq = leak_freq * prob * wx.probability * esd
-            if freq < 1e-15:
-                continue
-            try:
-                impact = impact_fn()
-            except Exception:
-                impact = {}
+        # Determine source locations (sub-sources or single center)
+        sources = iso.sub_sources if iso.sub_sources else [(iso.x, iso.y)]
+        n_sources = len(sources)
 
-            buckets.append(_ScenarioBucket(
-                name=f"{iso.name}/{hole.name}/{wx.name}/{outcome}",
-                freq=freq, outcome=outcome,
-                iso_name=iso.name, hole_name=hole.name,
-                weather=wx.name, mdot=mdot_avg,
-                iso_x=iso.x, iso_y=iso.y,
-                impact_dists=impact,
-                extra={"phase": phase, "total_mass": total_mass, "t_final": t_final},
-            ))
+        buckets: List[_ScenarioBucket] = []
+        for src_x, src_y in sources:
+            for outcome, prob, impact_fn in outcomes:
+                freq = leak_freq * prob * wx.probability * esd / n_sources
+                if freq < 1e-15:
+                    continue
+                try:
+                    impact = impact_fn()
+                except Exception:
+                    impact = {}
+
+                buckets.append(_ScenarioBucket(
+                    name=f"{iso.name}/{hole.name}/{wx.name}/{outcome}",
+                    freq=freq, outcome=outcome,
+                    iso_name=iso.name, hole_name=hole.name,
+                    weather=wx.name, mdot=mdot_avg,
+                    iso_x=src_x, iso_y=src_y,
+                    impact_dists=impact,
+                    extra={"phase": phase, "total_mass": total_mass, "t_final": t_final},
+                ))
         return buckets
 
     def _toxic_lambda(self, mdot: float, sub: str, wx: WeatherScenario,

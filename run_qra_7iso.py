@@ -34,7 +34,8 @@ iso_sections = [
     IsoSection(name="Process Area", P=60e5, T=320.0,
                volume=8.5, composition="natural_gas", molecular_weight=20.5,
                fill_fraction=0.0, x=0, y=30, elevation=3.0, n_equipment=5,
-               freq_scale=2.4),
+               freq_scale=2.4,
+               sub_sources=[(0, 30), (-10, 40), (10, 40), (-10, 20), (10, 20)]),
 
     # 2. Storage Tank Farm — 2 condensate tanks
     IsoSection(name="Storage Tank Farm", P=3e5, T=305.0,
