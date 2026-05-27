@@ -602,7 +602,7 @@ def add_table(
             for cell in row
         ])
 
-    avail_width = doc.width  # _PAGE_W - 2 * _MARGIN
+    avail_width = doc.width if doc is not None else (_PAGE_W - 2 * _MARGIN)
     if col_widths is None:
         ncols = len(headers)
         if ncols > 0:

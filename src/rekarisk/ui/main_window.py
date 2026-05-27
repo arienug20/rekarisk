@@ -42,6 +42,7 @@ from .fire_panel import FirePanel
 from .explosion_panel import ExplosionPanel
 from .vulnerability_panel import VulnerabilityPanel
 from .qra_panel import QRAPanel
+from .domino_panel import DominoPanel
 
 # Results panels
 from .source_term_results import SourceTermResultsPanel
@@ -50,6 +51,7 @@ from .fire_results import FireResultsPanel
 from .explosion_results import ExplosionResultsPanel
 from .vulnerability_results import VulnerabilityResultsWidget as VulnerabilityResultsPanel
 from .qra_results import QRAResultsPanel
+from .domino_results import DominoResultsPanel
 
 from ..core.substance_db import SubstanceDatabase, get_database
 from ..core.audit_trail import AuditTrail, AuditAction
@@ -292,6 +294,7 @@ class MainWindow(QMainWindow):
         self._menu_bar.show_monte_carlo.connect(self._open_monte_carlo)
         self._menu_bar.show_report.connect(self._open_report)
         self._menu_bar.show_comparison.connect(self._open_comparison)
+        self._menu_bar.show_domino.connect(self._open_domino_panel)
         self._menu_bar.show_about.connect(self._show_about)
 
         # Toolbar → slots
@@ -909,6 +912,28 @@ class MainWindow(QMainWindow):
         self._action_run.setEnabled(True)
         self.statusBar().showMessage("QRA editor opened", 3000)
 
+    def _open_domino_panel(self):
+        """Open a Domino / Escalation analysis tab."""
+        label = "⛓️ Domino"
+        if label in self._active_panels:
+            for i in range(self._tab_widget.count()):
+                if self._tab_widget.tabText(i) == label:
+                    self._tab_widget.setCurrentIndex(i)
+                    return
+
+        panel = DominoPanel()
+        results = DominoResultsPanel()
+        widget = self._make_scenario_tab(label, panel, results)
+
+        panel.calculation_requested.connect(
+            lambda params: self._execute_domino(params, results)
+        )
+
+        idx = self.add_central_tab(widget, label)
+        self._active_panels[label] = widget
+        self._action_run.setEnabled(True)
+        self.statusBar().showMessage("Domino analysis editor opened", 3000)
+
     # ══════════════════════════════════════════════════════════════════════
     # Execution Engine — run calculations and route data between modules
     # ══════════════════════════════════════════════════════════════════════
@@ -937,6 +962,8 @@ class MainWindow(QMainWindow):
         elif isinstance(panel, VulnerabilityPanel):
             panel._on_run()
         elif isinstance(panel, QRAPanel):
+            panel._on_run()
+        elif isinstance(panel, DominoPanel):
             panel._on_run()
         else:
             self.statusBar().showMessage(
@@ -1404,16 +1431,47 @@ class MainWindow(QMainWindow):
     def _execute_qra(self, panel, results_panel):
         """Execute a QRA calculation."""
         try:
-            # Collect params from the panel if it supports get_params
+            # Collect params from the panel
             params = {}
             if hasattr(panel, 'get_all_params'):
                 params = panel.get_all_params()
             elif hasattr(panel, 'get_params'):
                 params = panel.get_params()
-            # QRA is more complex — use event tree + frequencies + consequences
-            # For now, calculate FN curve if scenarios are provided
+            else:
+                # Collect from individual QRAPanel methods
+                params = {
+                    "frequency": panel.get_frequency() if hasattr(panel, 'get_frequency') else 1e-6,
+                    "scenarios": panel.get_scenarios() if hasattr(panel, 'get_scenarios') else [],
+                    "population_grid": panel.get_population_grid() if hasattr(panel, 'get_population_grid') else [],
+                    "criterion": panel.get_selected_criterion() if hasattr(panel, 'get_selected_criterion') else None,
+                    "ir_standard": panel.get_ir_threshold_standard() if hasattr(panel, 'get_ir_threshold_standard') else "hse_uk",
+                }
+
             from ..models.qra.societal_risk import calculate_fn_curve
             from ..models.qra.individual_risk import calculate_ir_grid
+
+            results_data = {}
+
+            # FN Curve if scenarios available
+            scenarios = params.get("scenarios", [])
+            if scenarios:
+                fn_result = calculate_fn_curve(scenarios)
+                results_data["fn_curve"] = fn_result
+
+            # Individual Risk grid if population data available
+            pop_grid = params.get("population_grid", [])
+            if pop_grid:
+                ir_result = calculate_ir_grid(
+                    scenarios=scenarios,
+                    population=pop_grid,
+                    x_range=(0, 1000, 50),
+                    y_range=(-500, 500, 50),
+                )
+                results_data["ir_grid"] = ir_result
+
+            # Display results
+            if results_data and hasattr(results_panel, 'set_result'):
+                results_panel.set_result(results_data)
 
             self._project_data.setdefault("results", []).append({
                 "module": "qra",
@@ -1433,6 +1491,97 @@ class MainWindow(QMainWindow):
 
         except Exception as e:
             QMessageBox.critical(self, "Calculation Error", f"QRA failed:\n{e}")
+
+    def _execute_domino(self, params: dict, results_panel):
+        """Execute a domino / escalation analysis."""
+        try:
+            from ..models.qra.domino import (
+                Equipment, EquipmentType, SubstanceCategory,
+                PrimaryEvent, run_domino_analysis,
+            )
+
+            # Build equipment list
+            eq_type_map = {v: k for k, v in [
+                (EquipmentType.ATMOSPHERIC_TANK, "atmospheric_tank"),
+                (EquipmentType.PRESSURE_VESSEL, "pressure_vessel"),
+                (EquipmentType.REACTOR, "reactor"),
+                (EquipmentType.HEAT_EXCHANGER, "heat_exchanger"),
+                (EquipmentType.PIPELINE, "pipeline"),
+                (EquipmentType.COLUMN, "column"),
+                (EquipmentType.SEPARATOR, "separator"),
+                (EquipmentType.PUMP, "pump"),
+                (EquipmentType.COMPRESSOR, "compressor"),
+                (EquipmentType.FIN_FAN_COOLER, "fin_fan_cooler"),
+                (EquipmentType.STRUCTURE, "structure"),
+            ]}
+            cat_map = {v: k for k, v in [
+                (SubstanceCategory.FLAMMABLE_LIQUID, "flammable_liquid"),
+                (SubstanceCategory.FLAMMABLE_GAS, "flammable_gas"),
+                (SubstanceCategory.FLAMMABLE_LPG, "flammable_lpg"),
+                (SubstanceCategory.TOXIC, "toxic"),
+                (SubstanceCategory.REACTIVE, "reactive"),
+                (SubstanceCategory.INERT, "inert"),
+            ]}
+
+            equipment_list = []
+            for eq_data in params.get("equipment", []):
+                eq = Equipment(
+                    id=eq_data["id"],
+                    name=eq_data.get("name", eq_data["id"]),
+                    equipment_type=eq_type_map.get(eq_data.get("equipment_type"), EquipmentType.PRESSURE_VESSEL),
+                    substance=eq_data.get("substance", "Unknown"),
+                    substance_category=cat_map.get(eq_data.get("substance_category"), SubstanceCategory.FLAMMABLE_LIQUID),
+                    inventory_kg=eq_data.get("inventory_kg", 0),
+                    x=eq_data.get("x", 0), y=eq_data.get("y", 0),
+                    diameter=eq_data.get("diameter", 2),
+                    height=eq_data.get("height", 5),
+                    operating_pressure=eq_data.get("operating_pressure", 1),
+                    is_insulated=eq_data.get("is_insulated", False),
+                    has_deluge=eq_data.get("has_deluge", False),
+                )
+                equipment_list.append(eq)
+
+            primary = PrimaryEvent(
+                equipment_id=params["primary_equipment_id"],
+                event_type=params.get("event_type", "pool_fire"),
+                frequency=params.get("frequency", 1e-6),
+                thermal_power_kw=params.get("thermal_power_kw", 0),
+                tnt_mass_kg=params.get("tnt_mass_kg", 0),
+                fireball_radius_m=params.get("fireball_radius_m", 0),
+                source_height_m=params.get("source_height_m", 0),
+                pool_radius_m=params.get("pool_radius_m", 0),
+            )
+
+            result = run_domino_analysis(
+                primary_event=primary,
+                equipment_list=equipment_list,
+                max_escalation_order=params.get("max_escalation_order", 3),
+                response_time_min=params.get("response_time_min", 10),
+                include_thermal=params.get("include_thermal", True),
+                include_overpressure=params.get("include_overpressure", True),
+                include_impingement=params.get("include_impingement", True),
+            )
+
+            results_panel.set_result(result)
+
+            self._project_data.setdefault("results", []).append({
+                "module": "domino",
+                "inputs": params,
+                "timestamp": datetime.now().isoformat(),
+            })
+
+            self._audit_trail.log(
+                action=AuditAction.RUN,
+                module="domino",
+                description=f"Domino analysis: {result.summary.get('domino_scenarios', 0)} scenarios",
+            )
+
+            self.set_dirty()
+            self._action_export.setEnabled(True)
+            self.statusBar().showMessage("✅ Domino analysis complete", 5000)
+
+        except Exception as e:
+            QMessageBox.critical(self, "Calculation Error", f"Domino analysis failed:\n{e}")
 
     def _open_report(self):
         """Open the report generation dialog."""
@@ -1484,7 +1633,7 @@ class MainWindow(QMainWindow):
         if dialog.exec() == WeatherDialog.DialogCode.Accepted:
             state = dialog.get_meteorological_state()
             # Apply to active dispersion panel if open
-            active = self._tabs.currentWidget()
+            active = self._tab_widget.currentWidget()
             if active and hasattr(active, 'panel') and hasattr(active.panel, 'set_weather_params'):
                 active.panel.set_weather_params(
                     wind_speed=state.wind_speed_ms,
@@ -1604,13 +1753,14 @@ class MainWindow(QMainWindow):
     def _build_active_model_function(self):
         """Build a callable model_function(params_dict) -> result from the
         currently active scenario panel."""
-        active = self._tabs.currentWidget()
+        active = self._tab_widget.currentWidget()
         if active is None:
             return None
 
-        panel_type = type(active).__name__
+        # If wrapped in container, get the actual panel
+        panel = getattr(active, 'panel', active)
 
-        if isinstance(active, SourceTermPanel):
+        if isinstance(panel, SourceTermPanel):
             from ..models.source_term.orifice import OrificeInput, calculate_orifice
 
             def fn(params):
@@ -1618,7 +1768,7 @@ class MainWindow(QMainWindow):
                 return calculate_orifice(inp)
             return fn
 
-        elif isinstance(active, DispersionPanel):
+        elif isinstance(panel, DispersionPanel):
             from ..models.dispersion.gaussian_plume import PlumeInput, calculate_plume
 
             def fn(params):
@@ -1626,7 +1776,7 @@ class MainWindow(QMainWindow):
                 return calculate_plume(inp)
             return fn
 
-        elif isinstance(active, FirePanel):
+        elif isinstance(panel, FirePanel):
             from ..models.fire.pool_fire import PoolFireInput, calculate_pool_fire
 
             def fn(params):
@@ -1634,7 +1784,7 @@ class MainWindow(QMainWindow):
                 return calculate_pool_fire(inp)
             return fn
 
-        elif isinstance(active, ExplosionPanel):
+        elif isinstance(panel, ExplosionPanel):
             from ..models.explosion.tnt_equivalency import TNTInput, calculate_tnt_equivalency
 
             def fn(params):
@@ -1646,26 +1796,28 @@ class MainWindow(QMainWindow):
 
     def _extract_active_panel_params(self) -> dict:
         """Extract base parameters from the currently active panel."""
-        active = self._tabs.currentWidget()
+        active = self._tab_widget.currentWidget()
         if active is None:
             return {}
 
-        if isinstance(active, SourceTermPanel):
+        panel = getattr(active, 'panel', active)
+
+        if isinstance(panel, SourceTermPanel):
             return {
                 "Cd": 0.62, "d_hole": 0.025, "P_upstream": 5e5,
                 "P_downstream": 101325, "T": 298.15, "phase": "gas",
             }
-        elif isinstance(active, DispersionPanel):
+        elif isinstance(panel, DispersionPanel):
             return {
                 "source_rate": 1.0, "wind_speed": 3.0,
                 "stability_class": "D", "release_height": 0.0,
             }
-        elif isinstance(active, FirePanel):
+        elif isinstance(panel, FirePanel):
             return {
                 "pool_diameter": 10.0, "substance": "gasoline",
                 "wind_speed": 3.0,
             }
-        elif isinstance(active, ExplosionPanel):
+        elif isinstance(panel, ExplosionPanel):
             return {
                 "mass_flammable": 1000.0, "heat_of_combustion": 46.4e6,
             }
@@ -1675,28 +1827,30 @@ class MainWindow(QMainWindow):
         """Extract parameter distributions for Monte Carlo."""
         from ..analysis.monte_carlo import Uniform, Normal
 
-        active = self._tabs.currentWidget()
+        active = self._tab_widget.currentWidget()
         if active is None:
             return {}
 
-        if isinstance(active, SourceTermPanel):
+        panel = getattr(active, 'panel', active)
+
+        if isinstance(panel, SourceTermPanel):
             return {
                 "d_hole": Uniform(0.01, 0.05),
                 "P_upstream": Uniform(3e5, 15e5),
                 "T": Normal(298.15, 10.0),
             }
-        elif isinstance(active, DispersionPanel):
+        elif isinstance(panel, DispersionPanel):
             return {
                 "source_rate": Uniform(0.5, 5.0),
                 "wind_speed": Uniform(1.0, 8.0),
                 "release_height": Uniform(0.0, 30.0),
             }
-        elif isinstance(active, FirePanel):
+        elif isinstance(panel, FirePanel):
             return {
                 "pool_diameter": Uniform(3.0, 20.0),
                 "wind_speed": Uniform(0.0, 8.0),
             }
-        elif isinstance(active, ExplosionPanel):
+        elif isinstance(panel, ExplosionPanel):
             return {
                 "mass_flammable": Uniform(500.0, 5000.0),
             }

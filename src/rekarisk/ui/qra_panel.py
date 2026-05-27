@@ -552,7 +552,7 @@ class PopulationTab(QWidget):
         self._pop_table = QTableWidget(5, 5)
         self._pop_table.setHorizontalHeaderLabels([f"Col {i}" for i in range(5)])
         self._pop_table.setVerticalHeaderLabels([f"Row {i}" for i in range(5)])
-        self._on_resize_grid()  # Fill initial values
+        # _on_resize_grid deferred until after all labels are created
 
         pop_layout.addWidget(self._pop_table)
 
@@ -587,6 +587,9 @@ class PopulationTab(QWidget):
 
         self._pop_table.cellChanged.connect(self._on_grid_changed)
         layout.addWidget(total_group)
+
+        # Now safe to initialize grid
+        self._on_resize_grid()
 
     def _on_resize_grid(self) -> None:
         """Resize the population grid."""

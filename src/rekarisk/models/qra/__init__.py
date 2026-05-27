@@ -12,6 +12,7 @@ Modules:
   - individual_risk: Individual Risk Per Annum (IRPA) calculation
   - societal_risk: Societal risk FN curves and ALARP assessment
   - risk_matrix: ISO 17776 / API 5×5 risk matrix classification
+  - domino: Escalation & domino effect analysis (Cozzani, CCPS)
 """
 
 from .failure_frequency import (
@@ -68,4 +69,26 @@ from .risk_matrix import (
     risk_level,
     risk_matrix_table,
     risk_matrix_html,
+)
+
+from .domino import (
+    EquipmentType,
+    EscalationVector,
+    DamageLevel,
+    SubstanceCategory,
+    Equipment,
+    PrimaryEvent,
+    EscalationLink,
+    DominoScenario,
+    DominoAnalysisResult,
+    run_domino_analysis,
+    calculate_distance,
+    thermal_radiation_at_distance,
+    overpressure_at_distance_tnt,
+    assess_damage_level,
+    calculate_escalation_probability,
+    calculate_ttf,
+    plot_domino_map,
+    plot_escalation_summary,
+    plot_domino_chain,
 )

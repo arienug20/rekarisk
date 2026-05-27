@@ -35,6 +35,7 @@ class RekariskMenuBar(QMenuBar):
     show_monte_carlo = pyqtSignal()
     show_report = pyqtSignal()
     show_comparison = pyqtSignal()
+    show_domino = pyqtSignal()
 
     show_audit_viewer = pyqtSignal()
     create_checkpoint = pyqtSignal()
@@ -225,6 +226,14 @@ class RekariskMenuBar(QMenuBar):
         act.setShortcut(QKeySequence("Ctrl+Shift+C"))
         act.setStatusTip("Compare multiple scenario results")
         act.triggered.connect(self.show_comparison.emit)
+        menu.addAction(act)
+
+        menu.addSeparator()
+
+        act = QAction("&Domino / Escalation Analysis...", self)
+        act.setShortcut(QKeySequence("Ctrl+Shift+D"))
+        act.setStatusTip("Run domino effect escalation analysis")
+        act.triggered.connect(self.show_domino.emit)
         menu.addAction(act)
 
     # ── Help Menu ──

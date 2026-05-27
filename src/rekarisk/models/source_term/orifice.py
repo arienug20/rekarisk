@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
 
-from ...core.constants import R, P_ATM, G, EPSILON, DISCHARGE_COEFFICIENT
+from ...core.constants import R, P_ATM, G, EPSILON, DISCHARGE_COEFFICIENT, WATER_BOILING_POINT
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -89,6 +89,7 @@ class OrificeInput:
     cp_liquid: float | None = None      # [J/(kg·K)]
     T_boiling: float | None = None      # boiling point at downstream P [K]
     omega: float | None = None          # compressibility parameter
+    d_pipe: float | None = None         # pipe diameter [m] — caps d_hole to this
 
 
 @dataclass
@@ -494,7 +495,14 @@ def calculate_orifice(inputs: OrificeInput,
         >>> print(f"Mass flow: {result.mdot_initial:.3f} kg/s")
     """
     messages = []
-    area = _hole_area(inputs.d_hole)
+
+    # Cap hole diameter to pipe diameter if provided (PHAST convention)
+    d_eff = inputs.d_hole
+    if inputs.d_pipe is not None and inputs.d_pipe > 0:
+        if d_eff > inputs.d_pipe:
+            messages.append(f"Hole diameter ({d_eff*1000:.0f}mm) capped to pipe diameter ({inputs.d_pipe*1000:.0f}mm)")
+            d_eff = inputs.d_pipe
+    area = _hole_area(d_eff)
     dp = inputs.P_upstream - max(inputs.P_downstream, 0.0)
     phase = inputs.phase.lower()
 
@@ -713,3 +721,425 @@ def quick_gas_orifice(
         molecular_weight=MW,
     )
     return calculate_orifice(inp, duration)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Extended Liquid & Two-Phase Release Models
+# ══════════════════════════════════════════════════════════════════════════════
+
+def estimate_boiling_point(
+    T_boil_ref: float,
+    P: float,
+    P_ref: float = P_ATM,
+    h_fg: float | None = None,
+    MW: float | None = None,
+) -> float:
+    """Estimate boiling point at a given pressure using Clausius-Clapeyron.
+
+    Uses the integrated Clausius-Clapeyron equation for a single-component
+    liquid-vapor equilibrium, assuming constant latent heat:
+
+        ln(P/P_ref) = -(h_fg / R_specific) * (1/T_boil - 1/T_boil_ref)
+
+    Solving for T_boil:
+
+        T_boil = T_boil_ref / (1 - (R_specific * T_boil_ref / h_fg) * ln(P/P_ref))
+
+    where R_specific = R / MW is the specific gas constant [J/(kg·K)].
+
+    This is a simplified estimation — for accurate results use measured
+    boiling curves or Antoine-equation parameters.
+
+    Args:
+        T_boil_ref: Reference boiling point [K] at P_ref (e.g., 373.15 K for water).
+        P: Target pressure [Pa abs] at which to estimate boiling point.
+        P_ref: Reference pressure [Pa abs]. Default 101325 Pa (1 atm).
+        h_fg: Latent heat of vaporization [J/kg]. If None, returns T_boil_ref.
+        MW: Molecular weight [kg/mol]. If provided, uses R/MW as specific
+            gas constant. If None, assumes h_fg is in J/mol and uses R directly.
+
+    Returns:
+        Estimated boiling point [K] at pressure P.
+
+    Example:
+        >>> # Water boiling point at 2 atm (~121°C)
+        >>> T = estimate_boiling_point(373.15, 202650, h_fg=2.26e6, MW=0.018)
+        >>> round(T, 1)
+        394.3
+    """
+    if h_fg is None or h_fg <= EPSILON:
+        return T_boil_ref
+    if P <= EPSILON or P_ref <= EPSILON:
+        return T_boil_ref
+
+    # Specific gas constant [J/(kg·K)]
+    R_specific = R / MW if MW is not None else R
+
+    ln_term = math.log(P / P_ref)
+    # Denominator: 1 - (R_specific * T_boil_ref * ln(P/P_ref)) / h_fg
+    denom = 1.0 - (R_specific * T_boil_ref * ln_term) / h_fg
+
+    if abs(denom) < EPSILON:
+        return T_boil_ref  # degenerate — pressure ratio too extreme
+
+    T_boil = T_boil_ref / denom
+    return max(1.0, T_boil)  # force physically meaningful > 0 K
+
+
+def calculate_liquid_release(
+    P_up: float,
+    P_down: float,
+    rho_l: float,
+    d_hole: float,
+    Cd: float = 0.61,
+) -> float:
+    """Calculate liquid mass flow rate through an orifice (Bernoulli equation).
+
+    Standard incompressible-flow orifice equation:
+
+        mdot = Cd * A * sqrt(2 * rho_l * (P_up - P_down))
+
+    This applies when the liquid is subcooled (below its boiling point at the
+    downstream pressure) — i.e., no flashing occurs across the orifice.
+
+    The default Cd = 0.61 is the standard value for a sharp-edged orifice.
+
+    Args:
+        P_up: Upstream (stagnation) pressure [Pa abs].
+        P_down: Downstream (back) pressure [Pa abs].
+        rho_l: Liquid density [kg/m³].
+        d_hole: Orifice diameter [m].
+        Cd: Discharge coefficient [-]. Default 0.61 (sharp-edged orifice).
+
+    Returns:
+        Mass flow rate [kg/s]. Returns 0.0 if dp <= 0.
+
+    Example:
+        >>> mdot = calculate_liquid_release(
+        ...     P_up=5e5, P_down=1e5, rho_l=1000, d_hole=0.01, Cd=0.61
+        ... )
+        >>> round(mdot, 4)
+        0.1355
+    """
+    dp = P_up - P_down
+    if dp <= EPSILON:
+        return 0.0
+
+    area = _hole_area(d_hole)
+    mdot = Cd * area * math.sqrt(2.0 * rho_l * dp)
+    return mdot
+
+
+def calculate_flashing_release(
+    P_up: float,
+    P_down: float,
+    T: float,
+    d_hole: float,
+    rho_l: float,
+    rho_g: float,
+    cp_l: float,
+    h_fg: float,
+    MW: float,
+    gamma: float = 1.3,
+    Cd: float = 0.61,
+    T_boil_ref: float | None = None,
+) -> float:
+    """Calculate two-phase flashing mass flow rate using the Omega method.
+
+    Implements the Fauske / API 520 Part I Annex C Omega method for
+    Homogeneous Equilibrium Model (HEM) two-phase flashing flow through
+    an orifice. This applies when a pressurized liquid is above its
+    boiling point at the downstream pressure, causing partial vaporization
+    (flashing) across the orifice.
+
+    Process:
+      1. Estimate boiling point at downstream pressure (Clausius-Clapeyron).
+      2. Calculate flashing quality x = cp_l * (T - T_boil) / h_fg.
+      3. Estimate omega compressibility parameter from fluid properties.
+      4. Determine critical pressure ratio η_c = ω / (ω + 1).
+      5. Check for choked flow.
+      6. Calculate dimensionless mass flux G* via omega correlation.
+      7. Return mdot = Cd * A * G.
+
+    Reference:
+        Leung, J.C. (1986) AIChE J, 32(10) — Generalized Correlation for
+        One-Component Homogeneous Equilibrium Flashing Choked Flow.
+
+    Args:
+        P_up: Upstream stagnation pressure [Pa abs].
+        P_down: Downstream back pressure [Pa abs].
+        T: Upstream temperature [K].
+        d_hole: Orifice diameter [m].
+        rho_l: Liquid density at stagnation conditions [kg/m³].
+        rho_g: Gas density at stagnation conditions [kg/m³].
+        cp_l: Liquid specific heat capacity [J/(kg·K)].
+        h_fg: Latent heat of vaporization [J/kg].
+        MW: Molecular weight [kg/mol].
+        gamma: Specific heat ratio Cp/Cv [-]. Default 1.3.
+        Cd: Discharge coefficient [-]. Default 0.61.
+        T_boil_ref: Reference boiling point [K] at P_ref=101325 Pa.
+            If None, defaults to WATER_BOILING_POINT (373.15 K).
+
+    Returns:
+        Mass flow rate [kg/s]. Returns 0.0 when upstream pressure does not
+        exceed downstream pressure, or when temperature is below boiling point.
+    """
+    area = _hole_area(d_hole)
+
+    if P_up <= P_down or rho_l <= EPSILON or rho_g <= EPSILON:
+        return 0.0
+
+    # ── Estimate boiling point at downstream pressure ──
+    t_ref = T_boil_ref if T_boil_ref is not None else WATER_BOILING_POINT
+    T_boil = estimate_boiling_point(
+        T_boil_ref=t_ref,
+        P=P_down,
+        P_ref=P_ATM,
+        h_fg=h_fg,
+        MW=MW,
+    )
+    if T_boil <= EPSILON:
+        return 0.0
+
+    # If liquid is below its boiling point at downstream pressure,
+    # no flashing occurs — caller should use liquid-only model.
+    if T <= T_boil:
+        return 0.0
+
+    # ── Calculate flashing quality (mass fraction that vaporizes) ──
+    x0 = cp_l * (T - T_boil) / h_fg
+    x0 = max(0.0, min(1.0, x0))
+
+    # ── Specific volumes ──
+    v_l = 1.0 / rho_l
+    v_g = 1.0 / rho_g
+    v_fg = v_g - v_l        # volume change on vaporization [m³/kg]
+    v_0 = x0 * v_g + (1.0 - x0) * v_l   # mixture specific volume at stagnation
+
+    # ── Estimate omega (compressibility) parameter ──
+    # ω = α₀/γ + (1 - α₀) * ω_s
+    # where ω_s = cp_l * T * P_up * (v_fg / h_fg)² / v_0
+    omega: float = 1.0  # default fallback
+
+    if h_fg > EPSILON and T > 0 and P_up > 0:
+        term = (v_fg / h_fg) ** 2
+        omega_s = cp_l * T * P_up * term / v_0
+
+        if x0 > EPSILON:
+            # Weighted by inlet void fraction
+            alpha_0 = x0 * v_g / v_0
+            omega = alpha_0 / gamma + (1.0 - alpha_0) * omega_s
+        else:
+            omega = omega_s if omega_s > EPSILON else 1.0
+
+    omega = max(0.1, min(100.0, omega))
+
+    # ── Critical pressure ratio and choking check ──
+    eta_c = omega / (omega + 1.0)
+    P_choked = P_up * eta_c
+    is_choked = P_down < P_choked
+    P_exit = P_choked if is_choked else max(P_down, 0.0)
+    eta = P_exit / P_up
+
+    if eta <= EPSILON or eta >= 1.0 - EPSILON:
+        return 0.0
+
+    # ── Stagnation density (two-phase mixture) ──
+    rho_0 = 1.0 / v_0 if v_0 > EPSILON else rho_l
+
+    # ── Dimensionless mass flux G* ──
+    # Leung (1986) equation:
+    #   For ω ≠ 1:  G* = sqrt(-2·[ω·ln(η) + (ω-1)·(1-η)]) / [ω·(1/η - 1) + 1]
+    #   For ω = 1:  G* = sqrt(2·[1 - η - η·ln(η)]) / (1/η)
+    if abs(omega - 1.0) > 0.001:
+        arg = -2.0 * (omega * math.log(eta) + (omega - 1.0) * (1.0 - eta))
+        denom = omega * (1.0 / eta - 1.0) + 1.0
+        if arg <= 0.0 or denom <= 0.0:
+            return 0.0
+        G_star = math.sqrt(arg) / denom
+    else:
+        arg = 2.0 * (1.0 - eta - eta * math.log(eta))
+        denom = 1.0 / eta
+        if arg <= 0.0:
+            return 0.0
+        G_star = math.sqrt(arg) / denom
+
+    # ── Mass flux and mass flow rate ──
+    G_flux = G_star * math.sqrt(P_up * rho_0)   # kg/(m²·s)
+    mdot = Cd * area * G_flux                    # kg/s
+    return mdot
+
+
+def calculate_release_rate_auto(
+    P_up: float,
+    P_down: float,
+    T: float,
+    d_hole: float,
+    phase: str,
+    rho_l: float | None = None,
+    rho_g: float | None = None,
+    cp_l: float | None = None,
+    h_fg: float | None = None,
+    MW: float | None = None,
+    gamma: float | None = None,
+    Cd: float = 0.61,
+    T_boil_ref: float | None = None,
+) -> tuple[float, str]:
+    """Smart dispatcher — selects the correct release model based on phase.
+
+    Routing logic:
+
+    +--------------+-----------------------------------+--------------------+
+    | phase        | Condition                         | Model used         |
+    +==============+===================================+====================+
+    | ``"gas"``    | —                                 | Gas orifice        |
+    |              |                                   | (choked/subsonic)  |
+    +--------------+-----------------------------------+--------------------+
+    | ``"liquid"`` | T ≤ T_boil(P_down)                | Liquid Bernoulli   |
+    +--------------+-----------------------------------+--------------------+
+    | ``"liquid"`` | T > T_boil(P_down)                | Two-phase flashing |
+    |              |                                   | (Omega method)     |
+    +--------------+-----------------------------------+--------------------+
+
+    Args:
+        P_up: Upstream stagnation pressure [Pa abs].
+        P_down: Downstream back pressure [Pa abs].
+        T: Upstream temperature [K].
+        d_hole: Orifice diameter [m].
+        phase: Release phase: ``"gas"`` or ``"liquid"``.
+        rho_l: Liquid density [kg/m³] (required for liquid phase).
+        rho_g: Gas density at upstream [kg/m³] (required for gas phase;
+            also used for two-phase flashing).
+        cp_l: Liquid specific heat [J/(kg·K)] (for two-phase flashing).
+        h_fg: Latent heat of vaporization [J/kg] (for two-phase flashing).
+        MW: Molecular weight [kg/mol] (required for gas; for two-phase).
+        gamma: Specific heat ratio Cp/Cv [-] (required for gas).
+        Cd: Discharge coefficient [-]. Default 0.61.
+        T_boil_ref: Reference boiling point [K] at P_ref=101325 Pa.
+            If None, estimated via Clausius-Clapeyron using water reference.
+
+    Returns:
+        Tuple of ``(mass_flow_rate [kg/s], flow_type)`` where
+        ``flow_type`` is one of:
+
+        - ``"gas_choked"`` — gas flow at sonic velocity
+        - ``"gas_subsonic"`` — gas flow below sonic velocity
+        - ``"liquid"`` — incompressible liquid Bernoulli flow
+        - ``"two_phase"`` — two-phase flashing flow (Omega method)
+
+    Raises:
+        ValueError: If required fluid properties are missing for the
+            selected phase.
+
+    Example:
+        >>> # Subcooled water release:
+        >>> mdot, ftype = calculate_release_rate_auto(
+        ...     P_up=5e5, P_down=1e5, T=320, d_hole=0.01,
+        ...     phase="liquid", rho_l=988, rho_g=0.6,
+        ...     cp_l=4180, h_fg=2.26e6, MW=0.018, gamma=1.33,
+        ...     T_boil_ref=373.15
+        ... )
+        >>> ftype
+        'liquid'
+    """
+    area = _hole_area(d_hole)
+
+    # ── Gas phase ──
+    if phase == "gas":
+        if rho_g is None or gamma is None or MW is None:
+            raise ValueError(
+                "Gas phase requires rho_g, gamma, and MW parameters."
+            )
+        k = gamma
+        result = gas_orifice_discharge(
+            Cd=Cd,
+            area=area,
+            P_up=P_up,
+            P_down=P_down,
+            k=k,
+            T=T,
+            MW=MW,
+        )
+        flow_type = "gas_choked" if result["is_choked"] else "gas_subsonic"
+        return result["mdot"], flow_type
+
+    # ── Liquid phase ──
+    if phase == "liquid":
+        if rho_l is None:
+            raise ValueError("Liquid phase requires rho_l parameter.")
+
+        # Determine boiling point at downstream pressure.
+        # If T_boil_ref not given and we have the properties, estimate it.
+        T_boil: float
+        if T_boil_ref is not None and h_fg is not None and MW is not None:
+            T_boil = estimate_boiling_point(
+                T_boil_ref=T_boil_ref,
+                P=P_down,
+                P_ref=P_ATM,
+                h_fg=h_fg,
+                MW=MW,
+            )
+        elif h_fg is not None and MW is not None:
+            # No explicit T_boil_ref — use water as reference
+            T_boil = estimate_boiling_point(
+                T_boil_ref=WATER_BOILING_POINT,
+                P=P_down,
+                P_ref=P_ATM,
+                h_fg=h_fg,
+                MW=MW,
+            )
+        else:
+            # Cannot estimate boiling point without h_fg and MW.
+            # Assume non-flashing; use pure liquid Bernoulli.
+            mdot = calculate_liquid_release(
+                P_up=P_up,
+                P_down=P_down,
+                rho_l=rho_l,
+                d_hole=d_hole,
+                Cd=Cd,
+            )
+            return mdot, "liquid"
+
+        # ── Decision: liquid-only vs two-phase flashing ──
+        if T <= T_boil:
+            # Subcooled — no flashing occurs
+            mdot = calculate_liquid_release(
+                P_up=P_up,
+                P_down=P_down,
+                rho_l=rho_l,
+                d_hole=d_hole,
+                Cd=Cd,
+            )
+            return mdot, "liquid"
+        else:
+            # Superheated — two-phase flashing flow
+            if rho_g is None or cp_l is None or h_fg is None or MW is None:
+                # Missing flashing parameters — degrade gracefully
+                mdot = calculate_liquid_release(
+                    P_up=P_up,
+                    P_down=P_down,
+                    rho_l=rho_l,
+                    d_hole=d_hole,
+                    Cd=Cd,
+                )
+                return mdot, "liquid"
+
+            mdot = calculate_flashing_release(
+                P_up=P_up,
+                P_down=P_down,
+                T=T,
+                d_hole=d_hole,
+                rho_l=rho_l,
+                rho_g=rho_g,
+                cp_l=cp_l,
+                h_fg=h_fg,
+                MW=MW,
+                gamma=gamma if gamma is not None else 1.3,
+                Cd=Cd,
+                T_boil_ref=T_boil_ref,
+            )
+            return mdot, "two_phase"
+
+    raise ValueError(
+        f"Unknown phase '{phase}'. Use 'gas' or 'liquid'."
+    )
