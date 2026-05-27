@@ -42,7 +42,7 @@ setup(
         "Development Status :: 2 - Pre-Alpha",
         "Intended Audience :: Science/Research",
         "Intended Audience :: Manufacturing",
-        "License :: OSI Approved :: MIT License",
+        "License :: Other/Proprietary",
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",
         "Topic :: Scientific/Engineering",

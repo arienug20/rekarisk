@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Proprietary-red.svg" alt="License: Proprietary"></a>
   <a href="#"><img src="https://img.shields.io/badge/version-1.0.0--dev-orange.svg" alt="Version"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11%2B-blue.svg" alt="Python 3.11+"></a>
   <a href="https://github.com/arienug20/rekarisk"><img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg" alt="Platform"></a>
@@ -21,7 +21,7 @@
 
 **Rekarisk** is a desktop application for consequence analysis and quantitative risk assessment (QRA) of hazardous chemical releases. It models source term discharge, atmospheric dispersion, fires, explosions, and toxicological impacts—integrating everything into a unified QRA framework with risk ranking, FN curves, and GIS-capable reporting.
 
-Built as an open-source alternative to proprietary safety-engineering tools, Rekarisk is aimed at process safety engineers, HSE professionals, researchers, and students.
+Built as a modern alternative to legacy safety-engineering tools, Rekarisk is aimed at process safety engineers, HSE professionals, researchers, and students.
 
 ## Features
 
@@ -140,7 +140,7 @@ rekarisk/
 ├── pyproject.toml               # Build configuration
 ├── requirements.txt             # Pip dependencies
 ├── CHANGELOG.md                 # Version history
-└── LICENSE                      # MIT License
+└── LICENSE                      # # Proprietary
 ```
 
 ## Contributing
@@ -165,7 +165,7 @@ ruff check src/
 
 ## License
 
-Rekarisk is licensed under the **MIT License**. See [LICENSE](LICENSE) for the full text.
+Rekarisk is licensed under the **# Proprietary**. See [LICENSE](LICENSE) for the full text.
 
 ## References &amp; Credits
 
