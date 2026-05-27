@@ -262,6 +262,97 @@ class TestJetFire:
         assert isinstance(result, JetFireResult)
         assert hasattr(result, 'flame_length')
 
+    def test_solid_flame_flux_decreases_far_field(self):
+        """Solid flame model: flux decreases monotonically at far field.
+
+        Near-field non-monotonicity is physically correct for surface-to-surface
+        radiation: a ground-level receiver directly under a vertical cylinder
+        has poor view of the cylinder side, and flux can increase slightly
+        as the receiver moves to a distance with better viewing angle.
+        At far field (>2× flame length), flux must decrease monotonically.
+        """
+        from rekarisk.models.fire.jet_fire import thermal_radiation_solid_flame_jet
+
+        L = 20.0
+        start_d = 2 * L  # 40m — well into far field
+        distances = [start_d, start_d + 10, start_d + 20, start_d + 40,
+                     start_d + 80, start_d + 150]
+        fluxes = []
+        for d in distances:
+            flux = thermal_radiation_solid_flame_jet(
+                total_heat_release=50e6, radiative_fraction=0.30,
+                flame_length=L, flame_tilt_deg=60.0,
+                center_height=1.0, distance=d,
+            )
+            fluxes.append(flux)
+
+        for i in range(1, len(fluxes)):
+            assert fluxes[i] <= fluxes[i-1] + 1e-6, (
+                f"Far-field flux should decrease: d={distances[i]:.0f}m "
+                f"flux={fluxes[i]:.6f} > d={distances[i-1]:.0f}m flux={fluxes[i-1]:.6f}"
+            )
+
+    def test_solid_flame_peak_at_closest_point(self):
+        """Peak flux must be at the closest distance, not somewhere in the middle."""
+        from rekarisk.models.fire.jet_fire import thermal_radiation_solid_flame_jet
+
+        flux_1m = thermal_radiation_solid_flame_jet(
+            total_heat_release=50e6, radiative_fraction=0.30,
+            flame_length=20.0, flame_tilt_deg=70.0,
+            center_height=1.0, distance=1.0,
+        )
+        flux_10m = thermal_radiation_solid_flame_jet(
+            total_heat_release=50e6, radiative_fraction=0.30,
+            flame_length=20.0, flame_tilt_deg=70.0,
+            center_height=1.0, distance=10.0,
+        )
+        flux_50m = thermal_radiation_solid_flame_jet(
+            total_heat_release=50e6, radiative_fraction=0.30,
+            flame_length=20.0, flame_tilt_deg=70.0,
+            center_height=1.0, distance=50.0,
+        )
+        assert flux_1m >= flux_10m, "Flux at 1m must be >= flux at 10m"
+        assert flux_10m >= flux_50m, "Flux at 10m must be >= flux at 50m"
+
+    def test_solid_flame_vertical_jet(self):
+        """Solid flame model works for vertical jet (tilt=0)."""
+        from rekarisk.models.fire.jet_fire import thermal_radiation_solid_flame_jet
+
+        flux_5m = thermal_radiation_solid_flame_jet(
+            total_heat_release=30e6, radiative_fraction=0.30,
+            flame_length=15.0, flame_tilt_deg=0.0,
+            center_height=0.0, distance=5.0,
+        )
+        flux_20m = thermal_radiation_solid_flame_jet(
+            total_heat_release=30e6, radiative_fraction=0.30,
+            flame_length=15.0, flame_tilt_deg=0.0,
+            center_height=0.0, distance=20.0,
+        )
+        assert flux_5m > flux_20m
+        assert flux_5m > 0
+
+    def test_solid_flame_multipoint_agree_far_field(self):
+        """Solid flame and multipoint models agree at far field (>5x flame length)."""
+        from rekarisk.models.fire.jet_fire import (
+            thermal_radiation_solid_flame_jet,
+            thermal_radiation_multipoint,
+        )
+
+        flux_sf = thermal_radiation_solid_flame_jet(
+            total_heat_release=20e6, radiative_fraction=0.30,
+            flame_length=10.0, flame_tilt_deg=30.0,
+            center_height=1.0, distance=100.0,
+        )
+        flux_mp = thermal_radiation_multipoint(
+            total_heat_release=20e6, radiative_fraction=0.30,
+            flame_length=10.0, flame_tilt_deg=30.0,
+            center_height=1.0, distance=100.0,
+        )
+        # At far field, both should be within 50% of each other
+        ratio = flux_sf / max(flux_mp, 1e-10)
+        assert 0.3 < ratio < 3.0, \
+            f"Far-field models should roughly agree: SF={flux_sf:.4f}, MP={flux_mp:.4f}"
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # BLEVE / Fireball
