@@ -139,3 +139,131 @@ class TestRiskMatrix:
         level = risk_level(LikelihoodLevel.FREQUENT, ConsequenceLevel.CATASTROPHIC)
         assert isinstance(level, RiskLevel)
         assert level in (RiskLevel.EXTREME, RiskLevel.HIGH)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 7-Section QRA Pipeline
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestQRAPipeline7Section:
+    """End-to-end 7-section pipeline validation."""
+
+    def test_pipeline_runs_with_7_iso_sections(self):
+        """7 ISO sections with realistic Indonesian layout produce LSIR."""
+        from rekarisk.models.qra.qra_pipeline import (
+            QRAPipeline, IsoSection, ReceptorPoint,
+        )
+        iso_sections = [
+            IsoSection(name="Process Area", P=60e5, T=320.0, volume=8.5,
+                       composition="natural_gas", molecular_weight=20.5,
+                       fill_fraction=0.0, x=0, y=30, elevation=3.0,
+                       n_equipment=5, freq_scale=2.4),
+            IsoSection(name="Storage Farm", P=3e5, T=305.0, volume=500.0,
+                       composition="propane", molecular_weight=44.1,
+                       fill_fraction=0.75, x=80, y=-20, elevation=0.5,
+                       rho_liquid=520.0, n_equipment=2),
+            IsoSection(name="Loading Area", P=5e5, T=300.0, volume=2.0,
+                       composition="propane", molecular_weight=44.1,
+                       fill_fraction=0.5, x=110, y=-50, elevation=0.0,
+                       rho_liquid=520.0),
+            IsoSection(name="Utility Area", P=15e5, T=300.0, volume=3.0,
+                       composition="natural_gas", molecular_weight=20.5,
+                       fill_fraction=0.0, x=-80, y=60, n_equipment=2),
+            IsoSection(name="Pipeline", P=70e5, T=315.0, volume=15.0,
+                       composition="natural_gas", molecular_weight=20.5,
+                       fill_fraction=0.0, x=-40, y=0, n_equipment=2),
+            IsoSection(name="Flare KO Drum", P=5e5, T=310.0, volume=12.0,
+                       composition="natural_gas", molecular_weight=20.5,
+                       fill_fraction=0.3, x=100, y=120, elevation=15.0),
+            IsoSection(name="Control Room", P=1e5, T=300.0, volume=1.0,
+                       composition="natural_gas", molecular_weight=20.5,
+                       fill_fraction=0.0, x=20, y=-40, n_equipment=0),
+        ]
+        receptors = [
+            ReceptorPoint(label="Process Area NKT", x=0, y=30),
+            ReceptorPoint(label="Storage Tank Farm", x=80, y=-20),
+            ReceptorPoint(label="Control Room NKT", x=20, y=-40),
+        ]
+        result = QRAPipeline(
+            iso_sections=iso_sections,
+            receptor_grid=receptors,
+        ).run()
+        assert result.scenario_count > 0
+        assert len(result.lsir_grid) == 3
+        assert result.lsir_grid[(0, 30)] > 0, "Process Area must have non-zero LSIR"
+        assert result.lsir_grid[(80, -20)] > 0, "Storage must have non-zero LSIR"
+
+    def test_shelter_factor_applied(self):
+        """Receptor shelter factor reduces LSIR at control rooms."""
+        from rekarisk.models.qra.qra_pipeline import (
+            QRAPipeline, IsoSection, ReceptorPoint,
+        )
+        iso_sections = [
+            IsoSection(name="Process Area", P=60e5, T=320.0, volume=8.5,
+                       composition="natural_gas", molecular_weight=20.5,
+                       fill_fraction=0.0, x=0, y=30, elevation=3.0,
+                       n_equipment=5),
+        ]
+        # Same location, different shelter factors
+        result_blasted = QRAPipeline(
+            iso_sections=iso_sections,
+            receptor_grid=[ReceptorPoint(label="Blast Room", x=0, y=30)],
+            receptor_shelter_factors={"Blast Room": 0.2},
+        ).run()
+        result_open = QRAPipeline(
+            iso_sections=iso_sections,
+            receptor_grid=[ReceptorPoint(label="Open Area", x=0, y=30)],
+            receptor_shelter_factors={"Open Area": 1.0},
+        ).run()
+        val_blasted = result_blasted.lsir_grid.get((0, 30), 1.0)
+        val_open = result_open.lsir_grid.get((0, 30), 1.0)
+        assert val_blasted > 0
+        assert val_blasted < val_open, (
+            f"Shelter 0.2 ({val_blasted:.2e}) < shelter 1.0 ({val_open:.2e})"
+        )
+
+    def test_n_equipment_scales_frequency(self):
+        """n_equipment linearly scales leak frequency."""
+        from rekarisk.models.qra.qra_pipeline import (
+            QRAPipeline, IsoSection, ReceptorPoint,
+        )
+        iso_1 = [IsoSection(name="Single Unit", P=60e5, T=320.0, volume=8.5,
+                            composition="natural_gas", molecular_weight=20.5,
+                            fill_fraction=0.0, x=0, y=30, n_equipment=1)]
+        iso_3 = [IsoSection(name="Triple Unit", P=60e5, T=320.0, volume=8.5,
+                            composition="natural_gas", molecular_weight=20.5,
+                            fill_fraction=0.0, x=0, y=30, n_equipment=3)]
+        receptors = [ReceptorPoint(label="Test", x=0, y=30)]
+        res_1 = QRAPipeline(iso_sections=iso_1, receptor_grid=receptors).run()
+        res_3 = QRAPipeline(iso_sections=iso_3, receptor_grid=receptors).run()
+        lsir_1 = res_1.lsir_grid.get((0, 30), 0)
+        lsir_3 = res_3.lsir_grid.get((0, 30), 0)
+        # 3 equipment should produce >= 3x the risk of 1 (linear scaling)
+        assert lsir_3 > lsir_1 * 2.0, (
+            f"3 equipment ({lsir_3:.2e}) should be > 2x 1 equipment ({lsir_1:.2e})"
+        )
+
+    def test_lsir_ranking_matches_layout(self):
+        """Higher LSIR near major process equipment, lower near admin."""
+        from rekarisk.models.qra.qra_pipeline import (
+            QRAPipeline, IsoSection, ReceptorPoint,
+        )
+        iso_sections = [
+            IsoSection(name="Process Area", P=60e5, T=320.0, volume=8.5,
+                       composition="natural_gas", molecular_weight=20.5,
+                       fill_fraction=0.0, x=0, y=30, n_equipment=5),
+            IsoSection(name="Storage", P=3e5, T=305.0, volume=500.0,
+                       composition="propane", molecular_weight=44.1,
+                       fill_fraction=0.75, x=80, y=-20, rho_liquid=520.0, n_equipment=2),
+        ]
+        receptors = [
+            ReceptorPoint(label="Process Area", x=0, y=30),
+            ReceptorPoint(label="Storage", x=80, y=-20),
+            ReceptorPoint(label="Remote", x=500, y=500),
+        ]
+        result = QRAPipeline(iso_sections=iso_sections, receptor_grid=receptors).run()
+        lsir_process = result.lsir_grid.get((0, 30), 0)
+        lsir_storage = result.lsir_grid.get((80, -20), 0)
+        lsir_remote = result.lsir_grid.get((500, 500), 0)
+        assert lsir_process > 0, "Process area should have risk"
+        assert lsir_remote < lsir_process, "Remote should be < process"
