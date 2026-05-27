@@ -103,6 +103,7 @@ class ProjectPanel(QWidget):
         # Scenarios folder
         scenarios = QTreeWidgetItem(root, ["Scenarios"], ITEM_SCENARIO_FOLDER)
         scenarios.setData(0, Qt.ItemDataRole.UserRole, {"type": "folder", "name": "scenarios"})
+        QTreeWidgetItem(scenarios, ["Source Term"], ITEM_SCENARIO_SOURCE_TERM)
         QTreeWidgetItem(scenarios, ["Dispersion"], ITEM_SCENARIO_DISPERSION)
         QTreeWidgetItem(scenarios, ["Fire"], ITEM_SCENARIO_FIRE)
         QTreeWidgetItem(scenarios, ["Explosion"], ITEM_SCENARIO_EXPLOSION)
@@ -191,6 +192,8 @@ class ProjectPanel(QWidget):
             menu.addAction("Close Project", lambda: None)
 
         elif item_type == ITEM_SCENARIO_FOLDER:
+            menu.addAction("Add Source Term Scenario",
+                           lambda: self.add_scenario.emit("source_term"))
             menu.addAction("Add Dispersion Scenario",
                            lambda: self.add_scenario.emit("dispersion"))
             menu.addAction("Add Fire Scenario",

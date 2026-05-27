@@ -28,8 +28,28 @@ from PyQt6.QtWidgets import (
 
 from .menu_bar import RekariskMenuBar
 from .project_panel import ProjectPanel
+from .project_panel import (
+    ITEM_SCENARIO_DISPERSION, ITEM_SCENARIO_FIRE,
+    ITEM_SCENARIO_EXPLOSION, ITEM_SCENARIO_SOURCE_TERM,
+)
 from .substance_selector import SubstanceSelector
 from .audit_viewer import AuditViewer
+
+# Input panels
+from .source_term_panel import SourceTermPanel
+from .dispersion_panel import DispersionPanel
+from .fire_panel import FirePanel
+from .explosion_panel import ExplosionPanel
+from .vulnerability_panel import VulnerabilityPanel
+from .qra_panel import QRAPanel
+
+# Results panels
+from .source_term_results import SourceTermResultsPanel
+from .dispersion_results import DispersionResultsPanel
+from .fire_results import FireResultsPanel
+from .explosion_results import ExplosionResultsPanel
+from .vulnerability_results import VulnerabilityResultsWidget as VulnerabilityResultsPanel
+from .qra_results import QRAResultsPanel
 
 from ..core.substance_db import SubstanceDatabase, get_database
 from ..core.audit_trail import AuditTrail, AuditAction
@@ -86,6 +106,16 @@ class MainWindow(QMainWindow):
         self._audit_viewer: Optional[AuditViewer] = None
         self._audit_dock: Optional[QDockWidget] = None
         self._recent_menu: Optional[QMenu] = None
+
+        # ── Scenario result cache (for cross-module data flow) ──
+        self._last_source_term_result: Optional[dict] = None
+        self._last_dispersion_result: Optional[dict] = None
+        self._last_fire_result: Optional[dict] = None
+        self._last_explosion_result: Optional[dict] = None
+        self._last_vulnerability_result: Optional[dict] = None
+
+        # ── Active panel tracking ──
+        self._active_panels: dict[str, QWidget] = {}  # tab_label -> widget
 
         self._setup_window()
         self._setup_menu()
@@ -274,8 +304,14 @@ class MainWindow(QMainWindow):
         self._project_panel.add_weather.connect(self._on_add_weather)
         self._project_panel.add_substance.connect(self._open_substance_db)
 
+        # Project panel — double-click to open scenario editor
+        self._project_panel.item_double_clicked.connect(self._on_item_double_clicked)
+
         # Substance selector → slots
         self._substance_selector.substance_selected.connect(self._on_substance_selected)
+
+        # Toolbar Run → run active scenario
+        self._action_run.triggered.connect(self._on_run_active_scenario)
 
     # ══════════════════════════════════════════════════════════════════════
     # Project Lifecycle
@@ -508,9 +544,18 @@ class MainWindow(QMainWindow):
         if index <= 0:  # Don't close the welcome/home tab
             return
         widget = self._tab_widget.widget(index)
+        tab_text = self._tab_widget.tabText(index)
+
+        # Remove from active panels tracking
+        self._active_panels.pop(tab_text, None)
+
         self._tab_widget.removeTab(index)
         if hasattr(widget, "deleteLater"):
             widget.deleteLater()
+
+        # Disable Run button if no scenario tabs remain
+        if not self._active_panels:
+            self._action_run.setEnabled(False)
 
     # ══════════════════════════════════════════════════════════════════════
     # Slots
@@ -519,17 +564,20 @@ class MainWindow(QMainWindow):
     def _on_add_scenario(self, scenario_type: str):
         """Handle 'Add Scenario' from project panel context menu."""
         type_labels = {
+            "source_term": "Source Term",
             "dispersion": "Dispersion",
             "fire": "Fire",
             "explosion": "Explosion",
-            "source_term": "Source Term",
         }
         label = type_labels.get(scenario_type, scenario_type.title())
         from datetime import datetime as dt
         name = f"{label} {dt.now().strftime('%H:%M')}"
 
         # Add to project panel
-        if scenario_type == "dispersion":
+        if scenario_type == "source_term":
+            self._project_panel.add_scenario_item(
+                "Scenarios", name, ITEM_SCENARIO_SOURCE_TERM)
+        elif scenario_type == "dispersion":
             from .project_panel import ITEM_SCENARIO_DISPERSION
             self._project_panel.add_scenario_item("Scenarios", name,
                                                    ITEM_SCENARIO_DISPERSION)
@@ -562,6 +610,17 @@ class MainWindow(QMainWindow):
         self.set_dirty()
         self.statusBar().showMessage(f"Added {label} scenario: {name}", 3000)
 
+        # Auto-open the corresponding editor panel
+        panel_openers = {
+            "source_term": self._open_source_term_panel,
+            "dispersion": self._open_dispersion_panel,
+            "fire": self._open_fire_panel,
+            "explosion": self._open_explosion_panel,
+        }
+        opener = panel_openers.get(scenario_type)
+        if opener:
+            opener()
+
     def _on_add_weather(self):
         """Handle 'Add Weather Case' from project panel."""
         from datetime import datetime as dt
@@ -585,9 +644,779 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Added weather case: {name}", 3000)
 
     def _on_substance_selected(self, substance):
-        """Handle substance selection from the selector."""
+        """Handle substance selection — propagate to active panel."""
         name = substance.name if substance else "?"
         self.statusBar().showMessage(f"Selected: {name}", 5000)
+
+        # Propagate to the currently active input panel
+        current = self._tab_widget.currentWidget()
+        if current is None:
+            return
+
+        # Check if it's a panel type that accepts substance data
+        if hasattr(current, 'panel') and hasattr(current.panel, 'set_substance'):
+            current.panel.set_substance(substance)
+        elif hasattr(current, 'set_substance'):
+            current.set_substance(substance)
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Scenario Panel Management (double-click → open editor tab)
+    # ══════════════════════════════════════════════════════════════════════
+
+    def _on_item_double_clicked(self, data):
+        """Open the appropriate panel when a project tree item is double-clicked."""
+        if not data or not isinstance(data, dict):
+            return
+
+        item_type = data.get("type", "")
+
+        # Handle scenario type items
+        from .project_panel import (
+            ITEM_SCENARIO_SOURCE_TERM, ITEM_SCENARIO_DISPERSION,
+            ITEM_SCENARIO_FIRE, ITEM_SCENARIO_EXPLOSION,
+        )
+
+        # Map scenario types to panel openers
+        scenario_map = {
+            "dispersion": self._open_dispersion_panel,
+            "fire": self._open_fire_panel,
+            "explosion": self._open_explosion_panel,
+        }
+
+        # Check by folder name in data
+        folder = data.get("name", "")
+        if folder in scenario_map:
+            scenario_map[folder]()
+            return
+
+        # Check by tree item type (stored in UserRole data)
+        item_type_int = data.get("item_type")
+        type_int_map = {
+            ITEM_SCENARIO_SOURCE_TERM: self._open_source_term_panel,
+            ITEM_SCENARIO_DISPERSION: self._open_dispersion_panel,
+            ITEM_SCENARIO_FIRE: self._open_fire_panel,
+            ITEM_SCENARIO_EXPLOSION: self._open_explosion_panel,
+        }
+        if item_type_int in type_int_map:
+            type_int_map[item_type_int]()
+            return
+
+        # Default: check tree item type from the project panel's selected item
+        selected = self._project_panel._tree.currentItem()
+        if selected:
+            itype = selected.type()
+            if itype in type_int_map:
+                type_int_map[itype]()
+                return
+
+        self.statusBar().showMessage(
+            f"Double-clicked: {data.get('name', '?')} — no panel configured", 3000
+        )
+
+    def _make_scenario_tab(self, label: str, panel: QWidget, results: QWidget) -> QWidget:
+        """Create a splitter widget with input panel and results panel."""
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        splitter = QSplitter(Qt.Orientation.Vertical)
+        splitter.addWidget(panel)
+        splitter.addWidget(results)
+        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(1, 2)
+
+        layout.addWidget(splitter)
+
+        # Store references for data access
+        container.panel = panel
+        container.results = results
+
+        return container
+
+    def _open_source_term_panel(self):
+        """Open a Source Term input + results tab."""
+        label = "🔩 Source Term"
+        if label in self._active_panels:
+            # Switch to existing tab
+            for i in range(self._tab_widget.count()):
+                if self._tab_widget.tabText(i) == label:
+                    self._tab_widget.setCurrentIndex(i)
+                    return
+
+        panel = SourceTermPanel()
+        results = SourceTermResultsPanel()
+        widget = self._make_scenario_tab(label, panel, results)
+
+        # Wire calculation signal
+        panel.calculation_requested.connect(
+            lambda calc_type, params: self._execute_source_term(
+                calc_type, params, results
+            )
+        )
+
+        idx = self.add_central_tab(widget, label)
+        self._active_panels[label] = widget
+        self._action_run.setEnabled(True)
+        self.statusBar().showMessage("Source Term editor opened", 3000)
+
+    def _open_dispersion_panel(self):
+        """Open a Dispersion input + results tab."""
+        label = "🌬️ Dispersion"
+        if label in self._active_panels:
+            for i in range(self._tab_widget.count()):
+                if self._tab_widget.tabText(i) == label:
+                    self._tab_widget.setCurrentIndex(i)
+                    return
+
+        panel = DispersionPanel()
+        results = DispersionResultsPanel()
+        widget = self._make_scenario_tab(label, panel, results)
+
+        # Wire calculation signal
+        panel.calculation_requested.connect(
+            lambda params: self._execute_dispersion(params, results)
+        )
+
+        # Pre-fill from last source term result
+        if self._last_source_term_result:
+            st = self._last_source_term_result
+            panel.set_source_params(
+                source_rate=st.get("mass_flow_rate", 0),
+                temperature=st.get("temperature", 298.15),
+                molecular_weight=st.get("molecular_weight", 29.0) * 1000,  # kg/mol → g/mol
+                phase=st.get("phase", "gas"),
+                release_height=st.get("release_height", 0),
+                release_diameter=st.get("hole_diameter", 0),
+            )
+            self.statusBar().showMessage(
+                "Dispersion: pre-filled from Source Term results", 3000
+            )
+
+        idx = self.add_central_tab(widget, label)
+        self._active_panels[label] = widget
+        self._action_run.setEnabled(True)
+        self.statusBar().showMessage("Dispersion editor opened", 3000)
+
+    def _open_fire_panel(self):
+        """Open a Fire input + results tab."""
+        label = "🔥 Fire"
+        if label in self._active_panels:
+            for i in range(self._tab_widget.count()):
+                if self._tab_widget.tabText(i) == label:
+                    self._tab_widget.setCurrentIndex(i)
+                    return
+
+        panel = FirePanel()
+        results = FireResultsPanel()
+        widget = self._make_scenario_tab(label, panel, results)
+
+        # Wire calculation signal
+        panel.calculation_requested.connect(
+            lambda model_type, params: self._execute_fire(
+                model_type, params, results
+            )
+        )
+
+        # Pre-fill from last source term (for jet fire)
+        # TODO: FirePanel needs set_source_params() method to auto-fill from source term
+        # For now, user needs to manually enter values
+
+        idx = self.add_central_tab(widget, label)
+        self._active_panels[label] = widget
+        self._action_run.setEnabled(True)
+        self.statusBar().showMessage("Fire editor opened", 3000)
+
+    def _open_explosion_panel(self):
+        """Open an Explosion input + results tab."""
+        label = "💥 Explosion"
+        if label in self._active_panels:
+            for i in range(self._tab_widget.count()):
+                if self._tab_widget.tabText(i) == label:
+                    self._tab_widget.setCurrentIndex(i)
+                    return
+
+        panel = ExplosionPanel()
+        results = ExplosionResultsPanel()
+        widget = self._make_scenario_tab(label, panel, results)
+
+        # Wire calculation signal
+        panel.calculation_requested.connect(
+            lambda params: self._execute_explosion(params, results)
+        )
+
+        idx = self.add_central_tab(widget, label)
+        self._active_panels[label] = widget
+        self._action_run.setEnabled(True)
+        self.statusBar().showMessage("Explosion editor opened", 3000)
+
+    def _open_vulnerability_panel(self):
+        """Open a Vulnerability input + results tab."""
+        label = "🛡️ Vulnerability"
+        if label in self._active_panels:
+            for i in range(self._tab_widget.count()):
+                if self._tab_widget.tabText(i) == label:
+                    self._tab_widget.setCurrentIndex(i)
+                    return
+
+        panel = VulnerabilityPanel()
+        results = VulnerabilityResultsPanel()
+        widget = self._make_scenario_tab(label, panel, results)
+
+        panel.calculation_requested.connect(
+            lambda params: self._execute_vulnerability(params, results)
+        )
+
+        idx = self.add_central_tab(widget, label)
+        self._active_panels[label] = widget
+        self._action_run.setEnabled(True)
+        self.statusBar().showMessage("Vulnerability editor opened", 3000)
+
+    def _open_qra_panel(self):
+        """Open a QRA input + results tab."""
+        label = "📊 QRA"
+        if label in self._active_panels:
+            for i in range(self._tab_widget.count()):
+                if self._tab_widget.tabText(i) == label:
+                    self._tab_widget.setCurrentIndex(i)
+                    return
+
+        panel = QRAPanel()
+        results = QRAResultsPanel()
+        widget = self._make_scenario_tab(label, panel, results)
+
+        panel.calculate_requested.connect(
+            lambda: self._execute_qra(panel, results)
+        )
+
+        idx = self.add_central_tab(widget, label)
+        self._active_panels[label] = widget
+        self._action_run.setEnabled(True)
+        self.statusBar().showMessage("QRA editor opened", 3000)
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Execution Engine — run calculations and route data between modules
+    # ══════════════════════════════════════════════════════════════════════
+
+    def _on_run_active_scenario(self):
+        """Run the calculation for the currently active scenario tab."""
+        current = self._tab_widget.currentWidget()
+        if current is None or not hasattr(current, 'panel'):
+            self.statusBar().showMessage("No active scenario to run", 3000)
+            return
+
+        panel = current.panel
+
+        # Trigger the panel's own run/calculate button
+        if isinstance(panel, SourceTermPanel):
+            calc_type, params = panel.get_current_tab_params()
+            self._execute_source_term(calc_type, params, current.results)
+        elif isinstance(panel, DispersionPanel):
+            params = panel.get_all_params()
+            self._execute_dispersion(params, current.results)
+        elif isinstance(panel, FirePanel):
+            # FirePanel needs to trigger its own _on_run
+            panel._on_run()
+        elif isinstance(panel, ExplosionPanel):
+            panel._on_run()
+        elif isinstance(panel, VulnerabilityPanel):
+            panel._on_run()
+        elif isinstance(panel, QRAPanel):
+            panel._on_run()
+        else:
+            self.statusBar().showMessage(
+                f"Cannot run: unknown panel type {type(panel).__name__}", 3000
+            )
+
+    def _execute_source_term(self, calc_type: str, params: dict, results_panel):
+        """Execute a source term calculation and display results."""
+        try:
+            if calc_type == "orifice":
+                from ..models.source_term.orifice import (
+                    OrificeInput, calculate_orifice,
+                )
+                inp = OrificeInput(
+                    Cd=params.get("Cd", 0.62),
+                    d_hole=params.get("d_hole", 0.025),
+                    P_upstream=params.get("P_upstream", 5e5),
+                    P_downstream=params.get("P_downstream", 101325),
+                    T=params.get("T", 300),
+                    phase=params.get("phase", "auto"),
+                    rho=params.get("rho", 1.2),
+                    molecular_weight=params.get("molecular_weight", 0.029),
+                    cp_cv_ratio=params.get("cp_cv_ratio", 1.4),
+                    h_liquid_head=params.get("h_liquid_head", 0),
+                    duration=params.get("duration"),
+                )
+                result = calculate_orifice(inp)
+                results_panel.show_orifice_result(result)
+
+                # Cache for downstream modules
+                self._last_source_term_result = {
+                    "calc_type": "orifice",
+                    "mass_flow_rate": result.mdot_initial,
+                    "exit_velocity": result.velocity,
+                    "temperature": params.get("T", 300),
+                    "molecular_weight": params.get("molecular_weight", 0.029),
+                    "phase": result.phase,
+                    "hole_diameter": params.get("d_hole", 0.025),
+                    "is_choked": result.is_choked,
+                    "total_mass": result.total_mass,
+                }
+
+            elif calc_type == "vessel":
+                from ..models.source_term.vessel_depressur import (
+                    VesselInput, calculate_vessel_blowdown,
+                )
+                inp = VesselInput(
+                    V=params.get("V", 10),
+                    A_wall=params.get("A_wall", 25),
+                    P_initial=params.get("P_initial", 6e5),
+                    T_initial=params.get("T_initial", 300),
+                    orifice_d=params.get("orifice_d", 0.025),
+                    Cd=params.get("Cd", 0.62),
+                    t_max=params.get("t_max", 60),
+                    P_target=params.get("P_target", 101325),
+                    phase=params.get("phase", "gas"),
+                    mode=params.get("mode", "api521"),
+                    molecular_weight=params.get("molecular_weight", 0.029),
+                    cp_cv_ratio=params.get("cp_cv_ratio", 1.4),
+                    rho_liquid=params.get("rho_liquid", 1000),
+                )
+                result = calculate_vessel_blowdown(inp)
+                results_panel.show_vessel_result(result)
+
+                # Cache — use average mass flow rate for downstream
+                avg_mdot = (
+                    sum(result.mdot) / len(result.mdot) if result.mdot else 0
+                )
+                self._last_source_term_result = {
+                    "calc_type": "vessel",
+                    "mass_flow_rate": avg_mdot,
+                    "exit_velocity": result.mdot[0] / (
+                        3.14159 * (params.get("orifice_d", 0.025) / 2) ** 2 * max(result.m[0], 0.1) / max(result.V[0], 1)
+                    ) if result.mdot else 0,
+                    "temperature": result.T[0] if result.T else 300,
+                    "molecular_weight": params.get("molecular_weight", 0.029),
+                    "phase": params.get("phase", "gas"),
+                    "hole_diameter": params.get("orifice_d", 0.025),
+                    "total_mass": result.total_mass_released,
+                }
+
+            elif calc_type == "pipe":
+                from ..models.source_term.pipe_flow import (
+                    PipeInput, calculate_pipe_flow,
+                )
+                inp = PipeInput(
+                    D=params.get("D", 0.1),
+                    L=params.get("L", 100),
+                    P_inlet=params.get("P_inlet", 5e5),
+                    P_outlet=params.get("P_outlet", 101325),
+                    T=params.get("T", 300),
+                    phase=params.get("phase", "gas"),
+                    rho=params.get("rho", 1.2),
+                    molecular_weight=params.get("molecular_weight", 0.029),
+                    cp_cv_ratio=params.get("cp_cv_ratio", 1.4),
+                    roughness=params.get("roughness", 4.5e-5),
+                )
+                result = calculate_pipe_flow(inp)
+                results_panel.show_pipe_result(result)
+
+                self._last_source_term_result = {
+                    "calc_type": "pipe",
+                    "mass_flow_rate": result.mdot,
+                    "exit_velocity": result.velocity,
+                    "temperature": params.get("T", 300),
+                    "molecular_weight": params.get("molecular_weight", 0.029),
+                    "phase": result.flow_regime,
+                    "total_mass": None,
+                }
+
+            elif calc_type == "psv":
+                from ..models.source_term.relief_valve import (
+                    ReliefValveInput, calculate_relief_valve,
+                )
+                inp = ReliefValveInput(
+                    W_required=params.get("W_required", 1.0),
+                    P_set=params.get("P_set", 5e5),
+                    P_back=params.get("P_back", 101325),
+                    T=params.get("T", 300),
+                    molecular_weight=params.get("molecular_weight", 0.029),
+                    cp_cv_ratio=params.get("cp_cv_ratio", 1.4),
+                    rho=params.get("rho", 1.2),
+                    valve_type=params.get("valve_type", "conventional"),
+                    overpressure_pct=params.get("overpressure_pct", 10),
+                    rupture_disk=params.get("rupture_disk_used", False),
+                )
+                result = calculate_relief_valve(inp)
+                results_panel.show_psv_result(result)
+
+                self._last_source_term_result = {
+                    "calc_type": "psv",
+                    "mass_flow_rate": result.W_relieving,
+                    "temperature": params.get("T", 300),
+                    "molecular_weight": params.get("molecular_weight", 0.029),
+                    "phase": "gas",
+                }
+
+            elif calc_type == "pool":
+                from ..models.source_term.pool_evaporation import (
+                    PoolInput, calculate_pool_evaporation,
+                )
+                inp = PoolInput(
+                    spill_mass=params.get("spill_mass", 1000),
+                    rho_l=params.get("rho_l", 1000),
+                    boiling_point=params.get("boiling_point", 373.15),
+                    heat_of_vaporization=params.get("heat_of_vaporization", 2.26e6),
+                    vapor_pressure=params.get("vapor_pressure", 3000),
+                    molecular_weight=params.get("molecular_weight", 0.018),
+                    T_ambient=params.get("T_ambient", 298.15),
+                    wind_speed=params.get("wind_speed", 3.0),
+                    surface=params.get("surface", "land"),
+                    bunded_area=params.get("bunded_area"),
+                    t_max=params.get("t_max", 120),
+                )
+                result = calculate_pool_evaporation(inp)
+                results_panel.show_pool_result(result)
+
+                self._last_source_term_result = {
+                    "calc_type": "pool",
+                    "mass_flow_rate": result.avg_evap_rate * result.pool_area[-1] if result.pool_area else 0,
+                    "temperature": params.get("T_ambient", 298.15),
+                    "molecular_weight": params.get("molecular_weight", 0.018),
+                    "phase": "gas",
+                }
+            else:
+                self.statusBar().showMessage(
+                    f"Unknown source term type: {calc_type}", 3000
+                )
+                return
+
+            # Store result in project data
+            self._project_data.setdefault("results", []).append({
+                "module": "source_term",
+                "calc_type": calc_type,
+                "inputs": params,
+                "summary": self._last_source_term_result,
+                "timestamp": datetime.now().isoformat(),
+            })
+
+            self._audit_trail.log(
+                action=AuditAction.RUN,
+                module="source_term",
+                description=f"Source term calculated: {calc_type}",
+                details={"calc_type": calc_type},
+            )
+
+            self.set_dirty()
+            self._action_export.setEnabled(True)
+            self.statusBar().showMessage(
+                f"✅ Source Term ({calc_type}) calculation complete", 5000
+            )
+
+        except Exception as e:
+            QMessageBox.critical(
+                self, "Calculation Error",
+                f"Source Term ({calc_type}) failed:\n{e}"
+            )
+
+    def _execute_dispersion(self, params: dict, results_panel):
+        """Execute a dispersion calculation."""
+        try:
+            from ..models.dispersion.dispersion_dispatcher import (
+                ReleaseInfo, WeatherInfo, DispersionDispatcher,
+            )
+
+            release = ReleaseInfo(
+                mass_rate=params.get("source_rate", 1.0),
+                mass=params.get("source_mass", 0),
+                duration=params.get("duration", 0),
+                substance_density=params.get("cloud_density", 1.2),
+                molecular_weight=params.get("molecular_weight", 29.0),
+                temperature=params.get("temperature", 298.15),
+                phase=params.get("phase", "gas"),
+                release_height=params.get("release_height", 0),
+                release_velocity=params.get("exit_velocity", 0),
+                release_diameter=params.get("release_diameter", 0),
+                heat_release_rate=params.get("heat_release_rate", 0),
+            )
+
+            weather = WeatherInfo(
+                wind_speed=params.get("wind_speed", 3.0),
+                stability_class=params.get("stability_class", "D"),
+                terrain_type=params.get("terrain_type", "rural"),
+            )
+
+            dispatcher = DispersionDispatcher()
+            result = dispatcher.dispatch(release, weather)
+            results_panel.display_result(result)
+
+            # Cache for downstream
+            self._last_dispersion_result = {
+                "model_used": result.model_used if hasattr(result, "model_used") else "unknown",
+                "concentrations": result.concentrations if hasattr(result, "concentrations") else None,
+                "x_grid": result.x_grid if hasattr(result, "x_grid") else None,
+                "max_concentration": result.max_concentration if hasattr(result, "max_concentration") else 0,
+                "params": params,
+            }
+
+            self._project_data.setdefault("results", []).append({
+                "module": "dispersion",
+                "inputs": params,
+                "summary": {
+                    "model": self._last_dispersion_result["model_used"],
+                    "max_conc": self._last_dispersion_result["max_concentration"],
+                },
+                "timestamp": datetime.now().isoformat(),
+            })
+
+            self._audit_trail.log(
+                action=AuditAction.RUN,
+                module="dispersion",
+                description="Dispersion calculation complete",
+                details={"model": self._last_dispersion_result["model_used"]},
+            )
+
+            self.set_dirty()
+            self._action_export.setEnabled(True)
+            self.statusBar().showMessage("✅ Dispersion calculation complete", 5000)
+
+        except Exception as e:
+            QMessageBox.critical(self, "Calculation Error", f"Dispersion failed:\n{e}")
+
+    def _execute_fire(self, model_type: str, params: dict, results_panel):
+        """Execute a fire consequence calculation."""
+        try:
+            if model_type == "pool_fire":
+                from ..models.fire.pool_fire import PoolFireInput, calculate_pool_fire
+                inp = PoolFireInput(
+                    pool_diameter=params.get("pool_diameter", 10),
+                    substance=params.get("substance", "gasoline"),
+                    burning_rate=params.get("burning_rate"),
+                    heat_of_combustion=params.get("heat_of_combustion"),
+                    radiative_fraction=params.get("radiative_fraction", 0.35),
+                    wind_speed=params.get("wind_speed", 3.0),
+                    ambient_temperature=params.get("ambient_temperature", 293.15),
+                    relative_humidity=params.get("relative_humidity", 0.5),
+                )
+                result = calculate_pool_fire(inp)
+                results_panel.display_pool_fire_result(result)
+
+            elif model_type == "jet_fire":
+                from ..models.fire.jet_fire import JetFireInput, calculate_jet_fire
+                inp = JetFireInput(
+                    orifice_diameter=params.get("orifice_diameter", 0.05),
+                    discharge_velocity=params.get("discharge_velocity", 100),
+                    mass_flow_rate=params.get("mass_flow_rate"),
+                    substance=params.get("substance", "propane"),
+                    heat_of_combustion=params.get("heat_of_combustion"),
+                    radiative_fraction=params.get("radiative_fraction", 0.30),
+                    wind_speed=params.get("wind_speed", 3.0),
+                    release_direction=params.get("release_direction", "horizontal"),
+                    ambient_temperature=params.get("ambient_temperature", 293.15),
+                    relative_humidity=params.get("relative_humidity", 0.5),
+                    discharge_density=params.get("discharge_density"),
+                )
+                result = calculate_jet_fire(inp)
+                results_panel.display_jet_fire_result(result)
+
+            elif model_type == "bleve":
+                from ..models.fire.bleve import BLEVEInput, calculate_bleve
+                inp = BLEVEInput(
+                    vessel_mass=params.get("vessel_mass", 5000),
+                    substance=params.get("substance", "propane"),
+                    heat_of_combustion=params.get("heat_of_combustion"),
+                    radiative_fraction=params.get("radiative_fraction", 0.35),
+                    ambient_temperature=params.get("ambient_temperature", 293.15),
+                    relative_humidity=params.get("relative_humidity", 0.5),
+                )
+                result = calculate_bleve(inp)
+                results_panel.display_bleve_result(result)
+
+            elif model_type == "flash_fire":
+                from ..models.fire.flash_fire import FlashFireInput, calculate_flash_fire
+                inp = FlashFireInput(
+                    substance=params.get("substance", "methane"),
+                    lfl=params.get("lfl", 0.05),
+                    ufl=params.get("ufl", 0.15),
+                    cloud_volume=params.get("cloud_volume", 1000),
+                    ambient_temperature=params.get("ambient_temperature", 293.15),
+                )
+                result = calculate_flash_fire(inp)
+                results_panel.display_flash_fire_result(result)
+            else:
+                self.statusBar().showMessage(f"Unknown fire type: {model_type}", 3000)
+                return
+
+            self._last_fire_result = {"model_type": model_type, "params": params}
+
+            self._project_data.setdefault("results", []).append({
+                "module": "fire",
+                "calc_type": model_type,
+                "inputs": params,
+                "timestamp": datetime.now().isoformat(),
+            })
+
+            self._audit_trail.log(
+                action=AuditAction.RUN,
+                module="fire",
+                description=f"Fire calculation: {model_type}",
+            )
+
+            self.set_dirty()
+            self._action_export.setEnabled(True)
+            self.statusBar().showMessage(f"✅ Fire ({model_type}) calculation complete", 5000)
+
+        except Exception as e:
+            QMessageBox.critical(self, "Calculation Error", f"Fire ({model_type}) failed:\n{e}")
+
+    def _execute_explosion(self, params: dict, results_panel):
+        """Execute an explosion consequence calculation."""
+        try:
+            results = []
+
+            if params.get("tnt_enabled", True):
+                from ..models.explosion.tnt_equivalency import TNTInput, calculate_tnt_equivalency
+                inp = TNTInput(
+                    mass_flammable=params.get("mass_flammable", 1000),
+                    heat_of_combustion=params.get("heat_of_combustion", 50.35e6),
+                    efficiency=params.get("tnt_efficiency", 0.05),
+                )
+                tnt_result = calculate_tnt_equivalency(inp)
+                results.append(("TNT", tnt_result))
+
+            if params.get("tno_enabled", True):
+                from ..models.explosion.tno_multi_energy import TNOInput, calculate_tno_multi_energy
+                inp = TNOInput(
+                    confinement_class=params.get("tno_confinement_class", "2D"),
+                    blast_strength=params.get("tno_blast_strength", 7),
+                    energy=params.get("tno_energy", 1e9),
+                )
+                tno_result = calculate_tno_multi_energy(inp)
+                results.append(("TNO", tno_result))
+
+            if params.get("bst_enabled", True):
+                from ..models.explosion.baker_strehlow import BSTInput, calculate_bst
+                inp = BSTInput(
+                    mass_flammable=params.get("bst_mass_flammable", 1000),
+                    heat_of_combustion=params.get("bst_heat_of_combustion", 50.35e6),
+                    fuel_reactivity=params.get("fuel_reactivity", "medium"),
+                    confinement_class=params.get("bst_confinement_class", "2D"),
+                    congestion_level=params.get("bst_congestion_level", "medium"),
+                    flame_mach=params.get("flame_mach"),
+                )
+                bst_result = calculate_bst(inp)
+                results.append(("BST", bst_result))
+
+            if results:
+                # Build dict of model_name -> result for the panel
+                result_dict = {name: res for name, res in results}
+                results_panel.display_results(result_dict)
+
+            self._last_explosion_result = {"params": params, "num_models": len(results)}
+
+            self._project_data.setdefault("results", []).append({
+                "module": "explosion",
+                "inputs": params,
+                "timestamp": datetime.now().isoformat(),
+            })
+
+            self._audit_trail.log(
+                action=AuditAction.RUN,
+                module="explosion",
+                description=f"Explosion: {len(results)} models",
+            )
+
+            self.set_dirty()
+            self._action_export.setEnabled(True)
+            self.statusBar().showMessage("✅ Explosion calculation complete", 5000)
+
+        except Exception as e:
+            QMessageBox.critical(self, "Calculation Error", f"Explosion failed:\n{e}")
+
+    def _execute_vulnerability(self, params: dict, results_panel):
+        """Execute a vulnerability assessment."""
+        try:
+            from ..models.vulnerability.vulnerability_calculator import (
+                VulnerabilityInput, calculate_vulnerability,
+            )
+
+            inp = VulnerabilityInput(
+                hazard_type=params.get("hazard_type", "toxic"),
+                substance=params.get("substance"),
+                thermal_model=params.get("thermal_model"),
+                overpressure_model=params.get("overpressure_model"),
+                exposure_time=params.get("exposure_time", 30),
+                manual_intensity=params.get("manual_intensity", 100),
+                intensity_source=params.get("intensity_source", "manual"),
+                use_shelter=params.get("use_shelter", False),
+                ach=params.get("ach"),
+                x_min=params.get("x_min", 10),
+                x_max=params.get("x_max", 5000),
+                y_min=params.get("y_min", -500),
+                y_max=params.get("y_max", 500),
+                n_x=params.get("n_x", 100),
+                n_y=params.get("n_y", 100),
+            )
+
+            result = calculate_vulnerability(inp)
+            results_panel.set_result(result)
+
+            self._last_vulnerability_result = {
+                "hazard_type": params.get("hazard_type"),
+                "result": result,
+            }
+
+            self._project_data.setdefault("results", []).append({
+                "module": "vulnerability",
+                "inputs": params,
+                "timestamp": datetime.now().isoformat(),
+            })
+
+            self._audit_trail.log(
+                action=AuditAction.RUN,
+                module="vulnerability",
+                description=f"Vulnerability: {params.get('hazard_type')}",
+            )
+
+            self.set_dirty()
+            self._action_export.setEnabled(True)
+            self.statusBar().showMessage("✅ Vulnerability assessment complete", 5000)
+
+        except Exception as e:
+            QMessageBox.critical(self, "Calculation Error", f"Vulnerability failed:\n{e}")
+
+    def _execute_qra(self, panel, results_panel):
+        """Execute a QRA calculation."""
+        try:
+            # Collect params from the panel if it supports get_params
+            params = {}
+            if hasattr(panel, 'get_all_params'):
+                params = panel.get_all_params()
+            elif hasattr(panel, 'get_params'):
+                params = panel.get_params()
+            # QRA is more complex — use event tree + frequencies + consequences
+            # For now, calculate FN curve if scenarios are provided
+            from ..models.qra.societal_risk import calculate_fn_curve
+            from ..models.qra.individual_risk import calculate_ir_grid
+
+            self._project_data.setdefault("results", []).append({
+                "module": "qra",
+                "inputs": params,
+                "timestamp": datetime.now().isoformat(),
+            })
+
+            self._audit_trail.log(
+                action=AuditAction.RUN,
+                module="qra",
+                description="QRA calculation executed",
+            )
+
+            self.set_dirty()
+            self._action_export.setEnabled(True)
+            self.statusBar().showMessage("✅ QRA calculation complete", 5000)
+
+        except Exception as e:
+            QMessageBox.critical(self, "Calculation Error", f"QRA failed:\n{e}")
 
     def _open_report(self):
         """Open the report generation dialog."""
@@ -668,7 +1497,7 @@ class MainWindow(QMainWindow):
             f"<p><i>Consequence & Risk Analysis for Safety Engineers</i></p>"
             f"<p><b>Codename:</b> Cikal</p>"
             f"<p><b>Author:</b> Arie Nugraha</p>"
-            f"<p><b>License:</b> MIT</p>"
+            f"<p><b>License:</b> Proprietary</p>"
             f"<p><b>Standards:</b> Kepmen LH, API, CCPS, TNO Yellow Book</p>"
             f"<p><a href='https://github.com/arienug20/rekarisk'>"
             f"github.com/arienug20/rekarisk</a></p>"
