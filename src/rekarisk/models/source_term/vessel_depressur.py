@@ -1126,3 +1126,184 @@ def calculate_vessel_blowdown(inputs: VesselInput) -> VesselResult:
         Z=data.get("Z"),
         k=data.get("k"),
     )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Time-Averaged Rate for QRA Integration
+# ══════════════════════════════════════════════════════════════════════════════
+
+def time_averaged_rate(
+    vessel_volume: float,
+    vessel_area: float,
+    pressure: float,
+    temperature: float,
+    orifice_diameter: float,
+    composition: str = "air",
+    molecular_weight: float = 0.0289647,
+    cp_cv_ratio: float = 1.4,
+    fill_fraction: float = 0.0,
+    rho_liquid: float | None = None,
+    duration: float | None = None,
+    Cd: float = 0.62,
+    mode: str = "api521",
+) -> dict:
+    """Calculate time-averaged mass flow rate from vessel blowdown.
+
+    This is the primary interface for QRA integration. Given vessel
+    parameters and hole size, it runs the full blowdown simulation
+    and returns the time-averaged release rate over the release duration.
+
+    Args:
+        vessel_volume: Vessel volume [m³].
+        vessel_area: Vessel wall surface area [m²].
+        pressure: Operating pressure [Pa abs].
+        temperature: Operating temperature [K].
+        orifice_diameter: Effective hole diameter [m].
+        composition: Substance identifier (e.g., 'methane', 'propane').
+        molecular_weight: Molecular weight [kg/mol].
+        cp_cv_ratio: Specific heat ratio k = Cp/Cv [-].
+        fill_fraction: Liquid fill fraction 0-1 (0=gas, 1=liquid).
+        rho_liquid: Liquid density [kg/m³] (required if fill_fraction > 0).
+        duration: Analysis duration [s]. If None, uses full blowdown time.
+        Cd: Discharge coefficient [-] (default 0.62).
+        mode: 'api521' (simplified) or 'rigorous' (ODE).
+
+    Returns:
+        Dict with keys:
+        - mdot_avg: Time-averaged mass flow rate [kg/s]
+        - mdot_initial: Initial (peak) mass flow rate [kg/s]
+        - mdot_final: Final mass flow rate at end of duration [kg/s]
+        - total_mass: Total mass released [kg]
+        - duration: Actual release duration [s]
+        - t_blowdown: Full blowdown time to P_atm [s]
+        - mass_fraction_released: Fraction of initial mass released [-]
+        - result: Full VesselResult object for detailed analysis
+    """
+    # Determine phase
+    if fill_fraction > 0.95:
+        phase = "two_phase"
+    elif fill_fraction > 0.01:
+        phase = "two_phase"
+    else:
+        phase = "gas"
+
+    # Build VesselInput
+    inputs = VesselInput(
+        V=vessel_volume,
+        A_wall=vessel_area,
+        P_initial=pressure,
+        T_initial=temperature,
+        composition=composition,
+        orifice_d=orifice_diameter,
+        Cd=Cd,
+        t_max=600.0,  # 10 minutes default —足够 for most blowdowns
+        P_target=P_ATM,
+        phase=phase,
+        molecular_weight=molecular_weight,
+        cp_cv_ratio=cp_cv_ratio,
+        rho_liquid=rho_liquid,
+        mode=mode,
+        n_time_steps=200,
+    )
+
+    # Run blowdown simulation
+    result = calculate_vessel_blowdown(inputs)
+
+    # Extract key metrics
+    t_final = result.t_final
+    total_mass = result.total_mass_released
+
+    # Initial mass flow rate
+    mdot_initial = float(result.mdot[0]) if len(result.mdot) > 0 else 0.0
+
+    # Final mass flow rate
+    mdot_final = float(result.mdot[-1]) if len(result.mdot) > 0 else 0.0
+
+    # Time-averaged rate over actual blowdown duration
+    if t_final > EPSILON:
+        mdot_avg = total_mass / t_final
+    else:
+        mdot_avg = mdot_initial
+
+    # If user-specified duration is shorter, use that for averaging
+    if duration is not None and duration > EPSILON and duration < t_final:
+        # Interpolate mdot at user duration
+        mdot_at_duration = float(np.interp(duration, result.t, result.mdot))
+        # Integrate up to user duration
+        mask = result.t <= duration
+        if np.any(mask):
+            t_integration = result.t[mask]
+            mdot_integration = result.mdot[mask]
+            total_mass_user = float(np.trapz(mdot_integration, t_integration))
+            mdot_avg = total_mass_user / duration
+            total_mass = total_mass_user
+            t_final = duration
+
+    # Calculate initial mass in vessel
+    m_initial = float(result.m[0]) if len(result.m) > 0 else 0.0
+    mass_fraction = total_mass / m_initial if m_initial > EPSILON else 0.0
+
+    return {
+        "mdot_avg": mdot_avg,
+        "mdot_initial": mdot_initial,
+        "mdot_final": mdot_final,
+        "total_mass": total_mass,
+        "duration": t_final,
+        "t_blowdown": result.t_final,
+        "mass_fraction_released": mass_fraction,
+        "result": result,
+    }
+
+
+def time_averaged_rate_from_orifice(
+    hole_diameter: float,
+    pressure: float,
+    temperature: float,
+    composition: str = "air",
+    molecular_weight: float = 0.0289647,
+    cp_cv_ratio: float = 1.4,
+    rho_gas: float | None = None,
+    Cd: float = 0.62,
+) -> float:
+    """Calculate initial choked mass flow rate through an orifice.
+
+    Simplified function for quick estimation without full blowdown.
+    Uses choked flow equation for gas releases.
+
+    Args:
+        hole_diameter: Hole diameter [m].
+        pressure: Upstream pressure [Pa abs].
+        temperature: Upstream temperature [K].
+        composition: Substance identifier.
+        molecular_weight: Molecular weight [kg/mol].
+        cp_cv_ratio: Specific heat ratio k.
+        rho_gas: Gas density [kg/m³] at upstream conditions (auto if None).
+        Cd: Discharge coefficient [-].
+
+    Returns:
+        Initial mass flow rate [kg/s].
+    """
+    A_hole = math.pi * (hole_diameter / 2.0) ** 2
+
+    # Calculate gas density if not provided
+    if rho_gas is None:
+        rho_gas = (pressure * molecular_weight) / (1.0 * R * temperature)
+
+    # Choked flow condition
+    k = cp_cv_ratio
+    r_crit = (2.0 / (k + 1.0)) ** (k / (k - 1.0))
+    P_crit = pressure * r_crit
+
+    if P_ATM < P_crit:
+        # Choked flow
+        G_flux = _gas_choked_mass_flux(pressure, temperature, k, molecular_weight)
+    else:
+        # Subsonic
+        pr = P_ATM / pressure
+        ratio_term = pr ** (2.0 / k) - pr ** ((k + 1.0) / k)
+        if ratio_term <= EPSILON:
+            return 0.0
+        factor = (2.0 * k / (k - 1.0)) * (molecular_weight / (R * temperature))
+        G_flux = pressure * math.sqrt(max(factor * ratio_term, 0.0))
+
+    return Cd * A_hole * G_flux

@@ -33,6 +33,8 @@ from .vessel_depressur import (
     VesselInput,
     VesselResult,
     calculate_vessel_blowdown,
+    time_averaged_rate,
+    time_averaged_rate_from_orifice,
 )
 
 from .two_phase import (
@@ -100,6 +102,7 @@ __all__ = [
     "quick_liquid_orifice", "quick_gas_orifice",
     # vessel_depressur
     "VesselInput", "VesselResult", "calculate_vessel_blowdown",
+    "time_averaged_rate", "time_averaged_rate_from_orifice",
     # two_phase
     "TwoPhaseModel", "TwoPhaseRegime", "TwoPhaseInput", "TwoPhaseResult",
     "tp_calculate_flash_fraction", "calculate_saturated_flash_fraction",
