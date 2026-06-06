@@ -481,18 +481,38 @@ def _fatal_prob(outcome: str, d: float, impact: Dict[float, float],
         return 0.0
 
     elif outcome == "toxic":
-        # For H2S, use probit-based fatality with distance interpolation
+        # For H2S, use probit-based fatality with distance-based concentration
+        # estimation from ERPG endpoint distances.
         sub_lower = substance.lower()
         if "hydrogen_sulfide" in sub_lower or "h2s" in sub_lower:
             try:
-                from rekarisk.models.vulnerability.toxic_dose import toxic_load_to_probit_fatality
-                # Estimate concentration at distance d: C ~ max_d / d scaled
-                # Conservative: assume C_ppm ≈ endpoint_ppm * (max_d / d)
-                if max_d > 0 and d > 0:
-                    Pf_est = toxic_load_to_probit_fatality(
-                        100.0 * (max_d / max(d, 1.0)), exp_t / 60.0, "hydrogen_sulfide"
+                from rekarisk.models.vulnerability.toxic_dose import (
+                    toxic_load_to_probit_fatality, ERPG_DATABASE,
+                )
+                # Use ERPG-3 (100 ppm for H2S) distance as reference point.
+                # Concentration decays as ~1/d² (Gaussian far-field).
+                # Find the best available reference distance from impact dict.
+                erpg3 = ERPG_DATABASE.get("hydrogen_sulfide")
+                endpoint_ppm = erpg3.erpg_3 if erpg3 else 100.0  # ppm
+
+                # Try ERPG-3 key first, then largest distance as fallback
+                ref_dist = None
+                for key in ("ERPG-3", "ERPG-2", "endpoint"):
+                    if key in impact and impact[key] > 0:
+                        ref_dist = impact[key]
+                        # Adjust endpoint ppm if using ERPG-2 (30 ppm)
+                        if key == "ERPG-2" and erpg3:
+                            endpoint_ppm = erpg3.erpg_2  # 30 ppm
+                        break
+                if ref_dist is None:
+                    ref_dist = max_d
+
+                if ref_dist > 0 and d > 0:
+                    # C(d) ≈ C_ref × (d_ref / d)²  — inverse-square decay
+                    C_est = endpoint_ppm * (ref_dist / d) ** 2
+                    Pf = toxic_load_to_probit_fatality(
+                        C_est, exp_t / 60.0, "hydrogen_sulfide"
                     )[1]
-                    Pf = Pf_est
                 else:
                     Pf = 0.0
             except Exception:
@@ -642,12 +662,27 @@ class QRAPipeline:
             for k in frozen_del:
                 frozen_del[k] *= ign_mult
 
+            # Apply occupancy multiplier to worker groups
+            if abs(occ_mult - 1.0) > 0.001:
+                scaled_workers = []
+                for wg in self.workers:
+                    scaled_locs = [
+                        (wx, wy, occ * occ_mult)
+                        for wx, wy, occ in wg.locations
+                    ]
+                    scaled_workers.append(WorkerGroup(
+                        name=wg.name, count=wg.count,
+                        locations=scaled_locs,
+                    ))
+            else:
+                scaled_workers = self.workers
+
             pipeline = QRAPipeline(
                 iso_sections=self.iso_sections,
                 hole_sizes=self.hole_sizes,
                 weather_scenarios=self.weathers,
                 receptor_grid=self.receptors,
-                worker_groups=self.workers,
+                worker_groups=scaled_workers,
                 shelter_ach=self.shelter_ach,
                 leak_freq_map=frozen_freq,
                 imm_ign_map=frozen_imm,
@@ -676,12 +711,14 @@ class QRAPipeline:
                 output[f"irpa_{wg_name}"] = ir_val
             return output
 
-        # Build input parameters with uncertainty distributions
+        # Build input parameters with uncertainty distributions.
+        # For LogNormal with median=1 and desired CV, sigma = sqrt(ln(1 + cv²)).
+        # This is because for X ~ LN(μ, σ): CV = sqrt(exp(σ²) - 1).
         params = {
-            "freq_mult": LogNormal(mu=math.log(1.0), sigma=freq_cv),
-            "ign_mult": LogNormal(mu=math.log(1.0), sigma=ign_cv),
-            "wind_mult": LogNormal(mu=math.log(1.0), sigma=wind_cv),
-            "occ_mult": LogNormal(mu=math.log(1.0), sigma=occ_cv),
+            "freq_mult": LogNormal(mu=0.0, sigma=math.sqrt(math.log(1.0 + freq_cv ** 2))),
+            "ign_mult": LogNormal(mu=0.0, sigma=math.sqrt(math.log(1.0 + ign_cv ** 2))),
+            "wind_mult": LogNormal(mu=0.0, sigma=math.sqrt(math.log(1.0 + wind_cv ** 2))),
+            "occ_mult": LogNormal(mu=0.0, sigma=math.sqrt(math.log(1.0 + occ_cv ** 2))),
         }
 
         mc_input = MCInput(

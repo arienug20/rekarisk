@@ -447,3 +447,48 @@ class TestBLEVE:
             "d(37.5kW) should be closer than d(12.5kW)"
         assert distances[12.5] < distances[5.0], \
             "d(12.5kW) should be closer than d(5kW)"
+
+
+class TestMudanSolidFlame:
+    """Tests for Mudan tilted cylinder solid flame model (ab1131d)."""
+
+    def test_mudan_flux_finite_at_reasonable_distance(self):
+        from rekarisk.models.fire.jet_fire import (
+            thermal_radiation_solid_flame_mudan_jet,
+        )
+        q = thermal_radiation_solid_flame_mudan_jet(
+            sep=200.0, flame_length=10.0, flame_width=2.0,
+            distance=50.0, tilt_deg=15.0, center_height=5.0,
+        )
+        assert math.isfinite(q)
+        assert q > 0.0
+
+    def test_mudan_flux_decreases_with_distance(self):
+        from rekarisk.models.fire.jet_fire import (
+            thermal_radiation_solid_flame_mudan_jet,
+        )
+        q_near = thermal_radiation_solid_flame_mudan_jet(
+            sep=200.0, flame_length=10.0, flame_width=2.0,
+            distance=20.0, tilt_deg=0.0, center_height=5.0,
+        )
+        q_far = thermal_radiation_solid_flame_mudan_jet(
+            sep=200.0, flame_length=10.0, flame_width=2.0,
+            distance=100.0, tilt_deg=0.0, center_height=5.0,
+        )
+        assert q_near > q_far
+
+    def test_mudan_in_threshold_vs_distance(self):
+        """Verify mudan model is available in distance_to_thresholds."""
+        from rekarisk.models.fire.jet_fire import (
+            distance_to_thresholds_jet_multipoint,
+        )
+        result = distance_to_thresholds_jet_multipoint(
+            total_heat_release=50_000_000, radiative_fraction=0.3,
+            flame_length=15.0, flame_width=3.0,
+            tilt_deg=10.0, center_height=7.0,
+            ambient_temperature=298.15, relative_humidity=50.0,
+            thresholds=[12.5, 5.0], model="mudan",
+        )
+        assert isinstance(result, dict)
+        for th, dist in result.items():
+            assert dist >= 0.0

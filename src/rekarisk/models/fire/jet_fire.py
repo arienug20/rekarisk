@@ -1343,16 +1343,17 @@ def distance_to_thresholds_jet_multipoint(
     thresholds: Optional[List[float]] = None,
     max_search_distance: float = 500.0,
     n_segments: int = 10,
-    model: str = "mudan",
+    model: str = "multipoint",
 ) -> Dict[float, float]:
     """Find distances to thermal radiation thresholds using solid flame
     or multi-point source model.
 
-    Binary search over the cylindrical solid flame model (default) for
-    accurate near-field distance estimation, significantly reducing the
-    ~51% underprediction at 37.5 kW/m² that the point source model produces.
-    Uses Mudan tilted cylinder view factor by default (model="mudan").
-    Falls back to multi-point source model when model="multipoint".
+    Binary search over the selected model for accurate near-field
+    distance estimation, significantly reducing the ~51% underprediction
+    at 37.5 kW/m² that the point source model produces.
+    Default is "multipoint" for backward compatibility.
+    Use "mudan" for Mudan tilted cylinder view factor
+    or "solid_flame" for multi-ring solid flame.
 
     Args:
         total_heat_release: Total heat release rate [W].
@@ -1366,7 +1367,7 @@ def distance_to_thresholds_jet_multipoint(
         thresholds: List of thresholds [kW/m²].
         max_search_distance: Max search distance [m].
         n_segments: Number of flame segments (for multipoint model only).
-        model: "mudan" (default), "solid_flame", or "multipoint".
+        model: "multipoint" (default), "mudan", or "solid_flame".
 
     Returns:
         Dict threshold → distance [m].

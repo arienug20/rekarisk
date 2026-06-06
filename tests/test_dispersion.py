@@ -306,3 +306,55 @@ class TestDenseGas:
         inp = self._make_input(release_type='instantaneous')
         result = calculate_dense_gas(inp)
         assert len(result.time_series) > 0
+
+
+class TestBuildingWake:
+    """Tests for Huber-Snyder building wake factor (ab1131d)."""
+
+    def test_no_building_returns_atm_sigma(self):
+        from rekarisk.models.dispersion.gaussian_plume import (
+            BuildingParams, sigma_building_wake,
+        )
+        bldg = BuildingParams(height=0.0, width=0.0, length=0.0)
+        assert sigma_building_wake(100.0, 5.0, bldg, "y") == 5.0
+
+    def test_wake_enhances_sigma_inside_zone(self):
+        from rekarisk.models.dispersion.gaussian_plume import (
+            BuildingParams, sigma_building_wake,
+        )
+        bldg = BuildingParams(height=10.0, width=20.0, length=15.0)
+        sy = sigma_building_wake(20.0, 3.0, bldg, "y")  # 20m < 5×10m=50m
+        assert sy > 3.0  # enhanced
+
+    def test_wake_decays_outside_zone(self):
+        from rekarisk.models.dispersion.gaussian_plume import (
+            BuildingParams, sigma_building_wake,
+        )
+        bldg = BuildingParams(height=10.0, width=20.0, length=15.0)
+        # Far downstream (200m >> 50m wake zone)
+        sy_far = sigma_building_wake(200.0, 10.0, bldg, "y")
+        # Should be close to atmospheric sigma since decay is strong
+        assert sy_far >= 10.0  # never less than atmospheric
+        # Should be much less enhancement than inside wake
+        sy_near = sigma_building_wake(20.0, 10.0, bldg, "y")
+        assert sy_far < sy_near
+
+    def test_vertical_coefficient_larger_than_lateral(self):
+        from rekarisk.models.dispersion.gaussian_plume import (
+            BuildingParams, sigma_building_wake,
+        )
+        bldg = BuildingParams(height=10.0, width=10.0, length=10.0)
+        # Same distance, same atmospheric sigma
+        sy = sigma_building_wake(20.0, 5.0, bldg, "y")
+        sz = sigma_building_wake(20.0, 5.0, bldg, "z")
+        # Vertical uses 0.7×H, lateral uses 0.35×W with equal H=W=10
+        assert sz > sy  # 0.7×10 > 0.35×10
+
+    def test_building_wake_correction_returns_tuple(self):
+        from rekarisk.models.dispersion.gaussian_plume import (
+            BuildingParams, building_wake_correction,
+        )
+        bldg = BuildingParams(height=10.0, width=20.0, length=15.0)
+        sy, sz = building_wake_correction(30.0, 5.0, 3.0, bldg)
+        assert sy > 5.0
+        assert sz > 3.0

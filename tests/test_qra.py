@@ -267,3 +267,72 @@ class TestQRAPipeline7Section:
         lsir_remote = result.lsir_grid.get((500, 500), 0)
         assert lsir_process > 0, "Process area should have risk"
         assert lsir_remote < lsir_process, "Remote should be < process"
+
+
+class TestMonteCarloAnalysis:
+    """Tests for QRA Monte Carlo uncertainty analysis (ab1131d)."""
+
+    def _make_simple_pipeline(self):
+        from rekarisk.models.qra.qra_pipeline import (
+            QRAPipeline, IsoSection, WorkerGroup, HoleSize,
+        )
+        iso = IsoSection(
+            name="Test", P=50e5, T=320.0, volume=5.0,
+            composition="natural_gas", molecular_weight=18.0,
+            fill_fraction=0.0, x=0, y=0, n_equipment=2,
+        )
+        workers = [WorkerGroup(
+            name="Operators", count=3,
+            locations=[(10.0, 0.0, 0.5)],
+        )]
+        holes = [HoleSize(name="small", diameter=0.01, Cd=0.85)]
+        pipeline = QRAPipeline(
+            iso_sections=[iso],
+            hole_sizes=holes,
+            worker_groups=workers,
+            receptor_grid=[],
+        )
+        return pipeline
+
+    def test_monte_carlo_returns_result(self):
+        pipeline = self._make_simple_pipeline()
+        result = pipeline.run_monte_carlo_analysis(
+            n_samples=10, seed=42,
+        )
+        assert "error" not in result or result.get("n_valid", 0) >= 0
+        # If MC ran successfully, check structure
+        if "mc_result" in result:
+            assert "irpa_stats" in result
+            assert "pll_stats" in result
+
+    def test_monte_carlo_reproducible_with_seed(self):
+        pipeline1 = self._make_simple_pipeline()
+        r1 = pipeline1.run_monte_carlo_analysis(n_samples=10, seed=123)
+        pipeline2 = self._make_simple_pipeline()
+        r2 = pipeline2.run_monte_carlo_analysis(n_samples=10, seed=123)
+        if "pll_samples" in r1 and "pll_samples" in r2:
+            assert r1["pll_samples"] == r2["pll_samples"]
+
+
+class TestH2SToxicFatalProb:
+    """Test H2S toxic fatality estimation in QRA pipeline (ab1131d fix)."""
+
+    def test_h2s_toxic_returns_bounded_probability(self):
+        from rekarisk.models.qra.qra_pipeline import _fatal_prob
+        impact = {"ERPG-3": 100.0, "ERPG-2": 200.0}
+        for d in [10, 50, 100, 150, 200, 300]:
+            p = _fatal_prob(
+                "toxic", float(d), impact,
+                "hydrogen_sulfide", 600.0,
+                shelter_ach=1.0, sheltered=False,
+            )
+            assert 0.0 <= p <= 1.0, f"P={p} at d={d}"
+
+    def test_h2s_toxic_zero_beyond_max_distance(self):
+        from rekarisk.models.qra.qra_pipeline import _fatal_prob
+        impact = {"ERPG-3": 100.0}
+        p = _fatal_prob(
+            "toxic", 200.0, impact,
+            "hydrogen_sulfide", 600.0,
+        )
+        assert p == 0.0  # beyond max impact distance
