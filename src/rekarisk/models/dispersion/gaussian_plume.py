@@ -40,6 +40,102 @@ from rekarisk.meteorology.stability import (
 PlumeModelType = Literal["gaussian", "dense", "puff", "jet"]
 
 # ---------------------------------------------------------------------------
+# Building Wake Factor (Huber-Snyder Method)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class BuildingParams:
+    """Building geometry for wake effect calculations.
+
+    Attributes:
+        height: Building height H_b [m].
+        width: Building width W_b (crosswind) [m].
+        length: Building length L_b (downwind) [m].
+    """
+    height: float = 0.0
+    width: float = 0.0
+    length: float = 0.0
+
+
+def sigma_building_wake(
+    x: float,
+    sigma_atm: float,
+    building: BuildingParams,
+    sigma_type: str = "y",
+) -> float:
+    """Apply Huber-Snyder building wake enhancement to dispersion coefficient.
+
+    The Huber-Snyder method (EPA, 1985) accounts for increased turbulence
+    in the wake region of a building. Within ~3-5 building heights downwind,
+    the plume is well-mixed in the wake cavity, enhancing both lateral and
+    vertical dispersion.
+
+    Enhancement formula:
+        σ_eff = sqrt(σ_atm² + c²)
+
+    where:
+        c = 0.35 × W_b  for lateral (σ_y)
+        c = 0.70 × H_b  for vertical (σ_z)
+
+    The enhancement decays exponentially beyond 5 building heights:
+        decay = exp(-0.5 × (x / (5 × H_b) - 1)²)   for x > 5 × H_b
+
+    Args:
+        x: Downwind distance [m].
+        sigma_atm: Unperturbed atmospheric sigma (σ_y or σ_z) [m].
+        building: Building geometry parameters.
+        sigma_type: 'y' for lateral, 'z' for vertical.
+
+    Returns:
+        Enhanced sigma [m] (always >= sigma_atm).
+    """
+    H = building.height
+    if H <= 0:
+        return sigma_atm
+
+    if sigma_type == "y":
+        c = 0.35 * building.width
+    else:
+        c = 0.70 * H
+
+    # Wake zone extends to ~5 building heights
+    wake_distance = 5.0 * H
+    decay = 1.0
+    if x > wake_distance and wake_distance > 0:
+        # Smooth exponential decay beyond wake zone
+        ratio = (x - wake_distance) / wake_distance
+        decay = max(0.05, math.exp(-0.5 * ratio ** 2))
+
+    sigma_enhanced = math.sqrt(sigma_atm ** 2 + (c * decay) ** 2)
+    return max(sigma_enhanced, sigma_atm)
+
+
+def building_wake_correction(
+    x: float,
+    sigma_y_val: float,
+    sigma_z_val: float,
+    building: BuildingParams,
+) -> Tuple[float, float]:
+    """Apply full building wake correction to sigma_y and sigma_z.
+
+    Args:
+        x: Downwind distance [m].
+        sigma_y_val: Uncorrected sigma_y [m].
+        sigma_z_val: Uncorrected sigma_z [m].
+        building: Building geometry.
+
+    Returns:
+        (sigma_y_corrected, sigma_z_corrected).
+    """
+    if building.height <= 0:
+        return sigma_y_val, sigma_z_val
+
+    sy = sigma_building_wake(x, sigma_y_val, building, "y")
+    sz = sigma_building_wake(x, sigma_z_val, building, "z")
+    return sy, sz
+
+
+# ---------------------------------------------------------------------------
 # Input Dataclass
 # ---------------------------------------------------------------------------
 
@@ -84,6 +180,7 @@ class PlumeInput:
     stack_temperature: float = 298.15  # T_s [K]
     molecular_weight: float = 29.0  # MW [g/mol]
     reference_time: float = 600.0  # t_ref [s]
+    building: Optional[BuildingParams] = None  # building geometry for wake factor
     grid_x_range: Tuple[float, float, int] = field(
         default_factory=lambda: (100.0, 5000.0, 50)
     )
@@ -383,6 +480,10 @@ def concentration_at_point(
     else:
         sz = sigma_z_val
 
+    # Apply building wake correction (Huber-Snyder)
+    if input.building is not None and input.building.height > 0:
+        sy, sz = building_wake_correction(x, sy, sz, input.building)
+
     if sy <= 0 or sz <= 0:
         return 0.0
 
@@ -502,6 +603,9 @@ def calculate_plume(
                 x, input.stability_class, input.terrain_type,
                 input.sampling_time, input.reference_time,
             )
+        # Apply building wake correction (Huber-Snyder)
+        if input.building is not None and input.building.height > 0:
+            sy_arr[i], sz_arr[i] = building_wake_correction(x, sy_arr[i], sz_arr[i], input.building)
 
     # Initialize 3D concentration grid [mg/m³]
     C_grid = np.zeros((n_x, n_y, n_z), dtype=np.float64)
@@ -1152,6 +1256,10 @@ def calculate_plume_with_jet(
                 x, input.stability_class, input.terrain_type,
                 input.sampling_time, input.reference_time,
             )
+
+        # Apply building wake correction to atmospheric sigma
+        if input.building is not None and input.building.height > 0:
+            sy_atm[i], sz_atm[i] = building_wake_correction(x, sy_atm[i], sz_atm[i], input.building)
 
         # Jet-enhanced dispersion coefficients
         if hole_diameter > 0 and jet_velocity > 0:

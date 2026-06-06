@@ -766,11 +766,29 @@ def _add_qra_section(
     num: int,
     styles: dict,
 ) -> None:
-    """Add a QRA subsection with IR contours, FN curve, risk matrix."""
+    """Add a QRA subsection with LSIR, IRPA, PLL, FN curve, ALARP."""
     story.append(Paragraph(
         f"4.{num} {qra_result.get('name', f'QRA Case {num}')}",
         styles["SectionH2"]
     ))
+
+    # ── LSIR Table ──
+    lsir_data = qra_result.get("lsir_data", {})
+    if lsir_data:
+        story.append(Paragraph("Individual Risk per Location (LSIR)", styles["SectionH3"]))
+        story.append(Paragraph(
+            "Location-Specific Individual Risk (LSIR) is the risk of fatality "
+            "per year for a hypothetical person continuously present at each "
+            "location. Values in [per year].",
+            styles["BodyText2"]
+        ))
+        lsir_rows = []
+        for location, risk_val in lsir_data.items():
+            label = location if isinstance(location, str) else f"({location[0]:.0f}, {location[1]:.0f})"
+            risk_str = f"{risk_val:.2e}" if isinstance(risk_val, (int, float)) else str(risk_val)
+            lsir_rows.append([label, risk_str])
+        if lsir_rows:
+            add_table(story, None, ["Location", "LSIR (/yr)"], lsir_rows, styles=styles)
 
     # IR contours
     ir_grid = qra_result.get("ir_grid")
@@ -781,10 +799,112 @@ def _add_qra_section(
                    for label, dist in ir_thresholds.items()]
         add_table(story, None, ["Risk Level", "Distance (m)"], ir_rows, styles=styles)
 
+    # ── IRPA Table ──
+    irpa_data = qra_result.get("irpa_data", {})
+    if irpa_data:
+        story.append(Paragraph("Individual Risk per Annum (IRPA)", styles["SectionH3"]))
+        story.append(Paragraph(
+            "Individual Risk Per Annum accounts for occupancy patterns. "
+            "IRPA = LSIR × occupancy fraction for each worker group.",
+            styles["BodyText2"]
+        ))
+        irpa_rows = [[wg, f"{ir:.2e}"] for wg, ir in irpa_data.items()]
+        if irpa_rows:
+            add_table(story, None, ["Worker Group", "IRPA (/yr)"], irpa_rows, styles=styles)
+
+    # ── PLL Table ──
+    pll_total = qra_result.get("pll_total", 0.0)
+    pll_detail = qra_result.get("pll_detail", {})
+    if pll_detail:
+        story.append(Paragraph("Potential Loss of Life (PLL)", styles["SectionH3"]))
+        story.append(Paragraph(
+            "PLL is the expected number of fatalities per year across all "
+            "scenarios. PLL = sum(IRPA × worker_count) for each group.",
+            styles["BodyText2"]
+        ))
+        pll_rows = [[wg, f"{pll:.4e}"] for wg, pll in pll_detail.items()]
+        pll_rows.append(["<b>Total PLL</b>", f"<b>{pll_total:.4e}</b>"])
+        add_table(story, None, ["Worker Group", "PLL (/yr)"], pll_rows, styles=styles)
+
+    # ── Dominant Contributors Table ──
+    dominant = qra_result.get("dominant", [])
+    if dominant:
+        story.append(Paragraph("Dominant Risk Contributors", styles["SectionH3"]))
+        if isinstance(dominant, list) and len(dominant) > 0:
+            if isinstance(dominant[0], dict):
+                dom_headers = list(dominant[0].keys())
+                dom_rows = [[str(d.get(h, "")) for h in dom_headers] for d in dominant]
+                add_table(story, None, dom_headers, dom_rows, styles=styles)
+            else:
+                dom_rows = [[str(d)] for d in dominant]
+                add_table(story, None, ["Scenario"], dom_rows, styles=styles)
+
+    # ── ALARP Assessment ──
+    alarp_data = qra_result.get("alarp", {})
+    if alarp_data:
+        story.append(Paragraph("ALARP Assessment", styles["SectionH3"]))
+        story.append(Paragraph(
+            "ALARP (As Low As Reasonably Practicable) assessment per "
+            "worker group, following HSE UK criteria:",
+            styles["BodyText2"]
+        ))
+        story.append(Paragraph(
+            "• <b>Intolerable</b> — IRPA &gt; 1×10⁻³ /yr: "
+            "Immediate risk reduction required regardless of cost.",
+            styles["BodyText2"]
+        ))
+        story.append(Paragraph(
+            "• <b>ALARP</b> — 1×10⁻⁶ ≤ IRPA ≤ 1×10⁻³ /yr: "
+            "Risk tolerable if further reduction is impractical or "
+            "disproportionately costly.",
+            styles["BodyText2"]
+        ))
+        story.append(Paragraph(
+            "• <b>Broadly Acceptable</b> — IRPA &lt; 1×10⁻⁶ /yr: "
+            "No further action required.",
+            styles["BodyText2"]
+        ))
+        alarp_rows = [[wg, assessment] for wg, assessment in alarp_data.items()]
+        if alarp_rows:
+            add_table(story, None, ["Worker Group", "ALARP Status"], alarp_rows, styles=styles)
+
+        # Compliance statement
+        n_intolerable = sum(1 for v in alarp_data.values()
+                           if "intolerable" in v.lower())
+        n_alarp = sum(1 for v in alarp_data.values()
+                     if "alarp" in v.lower() and "intolerable" not in v.lower())
+        n_acceptable = sum(1 for v in alarp_data.values()
+                          if "acceptable" in v.lower())
+        compliance_parts = []
+        if n_intolerable > 0:
+            compliance_parts.append(
+                f"{n_intolerable} group(s) are in the INTOLERABLE region — "
+                f"immediate risk reduction is required."
+            )
+        if n_alarp > 0:
+            compliance_parts.append(
+                f"{n_alarp} group(s) are in the ALARP region — "
+                f"risk reduction should be pursued if reasonably practicable."
+            )
+        if n_acceptable > 0:
+            compliance_parts.append(
+                f"{n_acceptable} group(s) are in the Broadly Acceptable region."
+            )
+        if compliance_parts:
+            story.append(Paragraph("Compliance Statement", styles["SectionH3"]))
+            for part in compliance_parts:
+                story.append(Paragraph(f"• {part}", styles["BodyText2"]))
+
     # FN curve
     fn_data = qra_result.get("fn_data")
     if fn_data:
         story.append(Paragraph("Societal Risk (FN Curve)", styles["SectionH3"]))
+        story.append(Paragraph(
+            "The FN curve shows the cumulative frequency (F) of accidents "
+            "causing N or more fatalities. It is compared against "
+            "company/regulatory criteria.",
+            styles["BodyText2"]
+        ))
         fn_rows = [["N (fatalities)", "F (frequency/year)"]]
         if isinstance(fn_data, dict):
             n_vals = fn_data.get("n", [])

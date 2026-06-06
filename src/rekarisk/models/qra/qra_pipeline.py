@@ -55,7 +55,19 @@ from rekarisk.models.fire.pool_fire import (
     flame_tilt_aga, surface_emissive_power,
     HEATS_OF_COMBUSTION as POOL_HC,
 )
-from rekarisk.models.dispersion.gaussian_plume import calculate_flash_fire_distance
+from rekarisk.models.dispersion.gaussian_plume import (
+    calculate_flash_fire_distance, BuildingParams,
+)
+
+# ─── Monte Carlo ─────────────────────────────────────────────────────────────
+try:
+    from rekarisk.analysis.monte_carlo import (
+        MCInput, MCResult, run_monte_carlo,
+        Normal, LogNormal, Uniform, Triangular, Beta, make_distribution,
+    )
+    HAS_MC = True
+except ImportError:
+    HAS_MC = False
 from rekarisk.models.dispersion.dense_gas import (
     calculate_dense_gas, DenseGasInput, DenseGasResult,
 )
@@ -114,6 +126,7 @@ class IsoSection:
     n_equipment: int = 1
     freq_scale: float = 1.0
     sub_sources: Optional[List[Tuple[float, float]]] = None
+    building: Optional[BuildingParams] = None  # building geometry for wake effect
 
 
 @dataclass
@@ -468,7 +481,24 @@ def _fatal_prob(outcome: str, d: float, impact: Dict[float, float],
         return 0.0
 
     elif outcome == "toxic":
-        Pf = max(0.0, 1.0 - d / max_d)
+        # For H2S, use probit-based fatality with distance interpolation
+        sub_lower = substance.lower()
+        if "hydrogen_sulfide" in sub_lower or "h2s" in sub_lower:
+            try:
+                from rekarisk.models.vulnerability.toxic_dose import toxic_load_to_probit_fatality
+                # Estimate concentration at distance d: C ~ max_d / d scaled
+                # Conservative: assume C_ppm ≈ endpoint_ppm * (max_d / d)
+                if max_d > 0 and d > 0:
+                    Pf_est = toxic_load_to_probit_fatality(
+                        100.0 * (max_d / max(d, 1.0)), exp_t / 60.0, "hydrogen_sulfide"
+                    )[1]
+                    Pf = Pf_est
+                else:
+                    Pf = 0.0
+            except Exception:
+                Pf = max(0.0, 1.0 - d / max_d)
+        else:
+            Pf = max(0.0, 1.0 - d / max_d)
         if sheltered and Pf > 0:
             sf = sf_calc(1.0, exp_t / 60.0, ach=shelter_ach)
             Pf *= max(0.01, 1.0 - sf)
@@ -555,6 +585,143 @@ class QRAPipeline:
             lsir_grid=lsir, irpa_table=irpa, pll_total=pll,
             fn_pairs=fn, dominant=dom, alarp=alarp,
             scenario_count=len(buckets), warnings=warnings)
+
+    # ── Monte Carlo uncertainty analysis ─────────────────────────────────
+
+    def run_monte_carlo_analysis(
+        self,
+        n_samples: int = 500,
+        seed: Optional[int] = None,
+        freq_cv: float = 0.5,
+        ign_cv: float = 0.3,
+        wind_cv: float = 0.2,
+        occ_cv: float = 0.1,
+    ) -> Dict[str, Any]:
+        """Run Monte Carlo uncertainty propagation over the QRA pipeline.
+
+        Samples are drawn from lognormal distributions around each input
+        parameter to quantify uncertainty on IRPA and PLL outputs.
+
+        Args:
+            n_samples: Number of Monte Carlo samples (default 500).
+            seed: RNG seed for reproducibility.
+            freq_cv: Coefficient of variation for leak frequency (0.5 = 50%).
+            ign_cv: Coefficient of variation for ignition probability (0.3).
+            wind_cv: Coefficient of variation for wind speed (0.2).
+            occ_cv: Coefficient of variation for occupancy (0.1).
+
+        Returns:
+            Dict with keys:
+                'mc_result': MCResult object with statistics.
+                'irpa_stats': Per-worker-group IRPA statistics.
+                'pll_stats': PLL statistics including confidence interval.
+                'irpa_samples': Dict of {worker: [samples]}.
+                'pll_samples': List of PLL samples.
+                'n_valid': Number of valid runs.
+        """
+        if not HAS_MC:
+            return {"error": "Monte Carlo module not available"}
+
+        import copy
+
+        # Define the model function that runs the pipeline with perturbed params
+        def _qra_model(
+            freq_mult: float = 1.0,
+            ign_mult: float = 1.0,
+            wind_mult: float = 1.0,
+            occ_mult: float = 1.0,
+        ) -> Dict[str, float]:
+            """Run pipeline with scaled parameters; return IRPA + PLL."""
+            frozen_freq = copy.deepcopy(self.leak_freq_map)
+            for k in frozen_freq:
+                frozen_freq[k] *= freq_mult
+            frozen_imm = copy.deepcopy(self.imm_ign_map)
+            for k in frozen_imm:
+                frozen_imm[k] *= ign_mult
+            frozen_del = copy.deepcopy(self.del_ign_map)
+            for k in frozen_del:
+                frozen_del[k] *= ign_mult
+
+            pipeline = QRAPipeline(
+                iso_sections=self.iso_sections,
+                hole_sizes=self.hole_sizes,
+                weather_scenarios=self.weathers,
+                receptor_grid=self.receptors,
+                worker_groups=self.workers,
+                shelter_ach=self.shelter_ach,
+                leak_freq_map=frozen_freq,
+                imm_ign_map=frozen_imm,
+                del_ign_map=frozen_del,
+                receptor_shelter_factors=self.receptor_shelter_factors,
+            )
+            # Apply wind multiplier to weather scenarios
+            if abs(wind_mult - 1.0) > 0.001:
+                scaled_wx = []
+                for w in pipeline.weathers:
+                    scaled_wx.append(WeatherScenario(
+                        name=w.name, wind_speed=w.wind_speed * wind_mult,
+                        stability_class=w.stability_class,
+                        ambient_temperature=w.ambient_temperature,
+                        relative_humidity=w.relative_humidity,
+                        direction=w.direction, probability=w.probability,
+                    ))
+                pipeline.weathers = scaled_wx
+
+            result = pipeline.run()
+
+            irpa = result.irpa_table
+            pll = result.pll_total
+            output: Dict[str, float] = {"pll": pll}
+            for wg_name, ir_val in irpa.items():
+                output[f"irpa_{wg_name}"] = ir_val
+            return output
+
+        # Build input parameters with uncertainty distributions
+        params = {
+            "freq_mult": LogNormal(mu=math.log(1.0), sigma=freq_cv),
+            "ign_mult": LogNormal(mu=math.log(1.0), sigma=ign_cv),
+            "wind_mult": LogNormal(mu=math.log(1.0), sigma=wind_cv),
+            "occ_mult": LogNormal(mu=math.log(1.0), sigma=occ_cv),
+        }
+
+        mc_input = MCInput(
+            parameters=params,
+            model_function=_qra_model,
+            n_samples=n_samples,
+            seed=seed,
+            confidence_level=0.95,
+            use_sobol=False,
+        )
+
+        mc_result = run_monte_carlo(mc_input)
+
+        # Extract per-worker IRPA statistics
+        irpa_stats: Dict[str, Dict[str, float]] = {}
+        pll_stats: Dict[str, float] = {}
+
+        for key, stats in mc_result.statistics.items():
+            if key.startswith("irpa_"):
+                wg_name = key[5:]
+                irpa_stats[wg_name] = stats
+            elif key == "pll":
+                pll_stats = stats
+
+        # Build samples dict
+        irpa_samples: Dict[str, List[float]] = {}
+        for key, arr in mc_result.outputs.items():
+            if key.startswith("irpa_"):
+                irpa_samples[key[5:]] = arr.tolist()
+
+        pll_samples = mc_result.outputs.get("pll", [])
+
+        return {
+            "mc_result": mc_result,
+            "irpa_stats": irpa_stats,
+            "pll_stats": pll_stats,
+            "irpa_samples": irpa_samples,
+            "pll_samples": pll_samples.tolist() if isinstance(pll_samples, np.ndarray) else pll_samples,
+            "n_valid": len(pll_samples) if isinstance(pll_samples, (list, np.ndarray)) else 0,
+        }
 
     # ── Section evaluation ────────────────────────────────────────────────
 
