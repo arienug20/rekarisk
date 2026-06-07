@@ -192,7 +192,7 @@ class IRContourTab(QWidget):
             self._thresh_table.setItem(i, 1, dist_item)
 
     def set_lsir_data(self, lsir: dict) -> None:
-        """Display LSIR data from pipeline as a table."""
+        """Display LSIR data from pipeline as a table + optional contour."""
         if not lsir:
             return
         # Build a simple text summary
@@ -237,6 +237,55 @@ class IRContourTab(QWidget):
             item.setTextAlignment(
                 Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             self._thresh_table.setItem(i, 1, item)
+
+    def set_structured_lsir(self, structured: dict) -> None:
+        """Plot contour from structured LSIR grid data.
+
+        Args:
+            structured: dict with 'x_coords', 'y_coords', 'values' (2D list).
+        """
+        xs = structured.get("x_coords", [])
+        ys = structured.get("y_coords", [])
+        Z = np.array(structured.get("values", []))
+        if len(xs) < 2 or len(ys) < 2 or Z.size < 4:
+            return
+
+        self._canvas.fig.clear()
+        ax = self._canvas.fig.add_subplot(111)
+
+        X, Y = np.meshgrid(xs, ys)
+        Z_plot = np.where(Z > 0, Z, 1e-12)
+
+        levels = [1e-6, 1e-5, 1e-4, 1e-3]
+        try:
+            contour = ax.contourf(
+                X, Y, Z_plot,
+                levels=levels,
+                colors=['#E8F5E9', '#C8E6C9', '#FFF9C4', '#FFCDD2'],
+                extend='both',
+            )
+            ax.contour(X, Y, Z_plot, levels=levels, colors='black', linewidths=0.5)
+            cbar = self._canvas.fig.colorbar(contour, ax=ax, label='LSIR (per year)')
+            cbar.set_ticks(levels)
+            cbar.set_ticklabels(['1e-6', '1e-5', '1e-4', '1e-3'])
+        except Exception:
+            # Not enough unique levels for contour — show scatter instead
+            for i, x in enumerate(xs):
+                for j, y in enumerate(ys):
+                    if j < Z_plot.shape[0] and i < Z_plot.shape[1]:
+                        ax.scatter(x, y, c=[Z_plot[j, i]], s=30, cmap='RdYlGn_r',
+                                   vmin=1e-8, vmax=1e-3, zorder=2)
+
+        ax.plot(0, 0, 'r*', markersize=12, label='Source')
+        ax.set_xlabel('X (m)')
+        ax.set_ylabel('Y (m)')
+        ax.set_title('LSIR Contour (Pipeline)')
+        ax.legend(loc='upper right')
+        ax.set_aspect('equal')
+        ax.grid(True, alpha=0.3)
+
+        self._canvas.fig.tight_layout()
+        self._canvas.draw()
 
 
 # ── FN Curve Tab ──────────────────────────────────────────────────────
@@ -557,6 +606,11 @@ class QRAResultsPanel(QWidget):
         lsir = data.get("lsir_data", {})
         if lsir and hasattr(self._ir_tab, 'set_lsir_data'):
             self._ir_tab.set_lsir_data(lsir)
+
+        # Structured LSIR grid for contour plot
+        structured = data.get("lsir_grid_structured")
+        if structured and hasattr(self._ir_tab, 'set_structured_lsir'):
+            self._ir_tab.set_structured_lsir(structured)
 
         # Update FN curve tab if FN data available
         fn = data.get("fn_data")

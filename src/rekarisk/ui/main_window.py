@@ -1430,56 +1430,73 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Calculation Error", f"Vulnerability failed:\n{e}")
 
     def _execute_qra(self, panel, results_panel):
-        """Execute a QRA calculation using end-to-end QRAPipeline."""
+        """Execute a QRA calculation using end-to-end QRAPipeline.
+
+        Reads actual data from the QRAPanel tabs:
+        - Event Tree → scenarios + leak frequencies
+        - Frequency Tab → base frequency + modifiers
+        - Population Tab → population grid → receptors + workers
+        - Risk Criteria → IR thresholds
+        """
         try:
             from ..models.qra.qra_pipeline import (
-                QRAPipeline, IsoSection, HoleSize, WeatherScenario,
-                ReceptorPoint, WorkerGroup,
+                QRAPipeline, IsoSection, ReceptorPoint, WorkerGroup,
             )
 
-            # ── Build pipeline inputs from QRA panel data ──
-            # Try to extract scenario data from panel
-            params = {}
-            if hasattr(panel, 'get_all_params'):
-                params = panel.get_all_params()
-            elif hasattr(panel, 'get_params'):
-                params = panel.get_params()
+            # ── 1. Read panel data ──
+            scenarios = panel.get_scenarios() if hasattr(panel, 'get_scenarios') else []
+            pop_grid = panel.get_population_grid() if hasattr(panel, 'get_population_grid') else []
+            base_freq = panel.get_frequency() if hasattr(panel, 'get_frequency') else 0.0
+            ir_standard = panel.get_ir_standard() if hasattr(panel, 'get_ir_standard') else "hse_uk"
+            event_tree = panel.get_event_tree() if hasattr(panel, 'get_event_tree') else None
+
+            params = {
+                "frequency": base_freq,
+                "scenarios": scenarios,
+                "population_grid": pop_grid,
+                "ir_standard": ir_standard,
+                "event_tree": event_tree,
+            }
+
+            # ── 2. Build IsoSections ──
+            # If event tree has scenario data, derive sections from it.
+            # Otherwise use a sensible default for standalone QRA.
+            iso_sections = []
+            if scenarios:
+                # Group scenarios by section name if available
+                section_names = set()
+                for s in scenarios:
+                    name = getattr(s, 'section', None) or s.get('section', 'Process Area') if isinstance(s, dict) else 'Process Area'
+                    section_names.add(name)
+                for name in section_names:
+                    iso_sections.append(IsoSection(
+                        name=name,
+                        P=50e5, T=320.0, volume=10.0,
+                        composition="natural_gas",
+                        molecular_weight=18.0,
+                        fill_fraction=0.0,
+                        x=0, y=0, n_equipment=3,
+                    ))
             else:
-                params = {
-                    "frequency": panel.get_frequency() if hasattr(panel, 'get_frequency') else 1e-6,
-                    "scenarios": panel.get_scenarios() if hasattr(panel, 'get_scenarios') else [],
-                    "population_grid": panel.get_population_grid() if hasattr(panel, 'get_population_grid') else [],
-                    "criterion": panel.get_selected_criterion() if hasattr(panel, 'get_selected_criterion') else None,
-                    "ir_standard": panel.get_ir_threshold_standard() if hasattr(panel, 'get_ir_threshold_standard') else "hse_uk",
-                }
+                # Default section
+                iso_sections = [
+                    IsoSection(
+                        name="Process Area",
+                        P=50e5, T=320.0, volume=10.0,
+                        composition="natural_gas",
+                        molecular_weight=18.0,
+                        fill_fraction=0.0,
+                        x=0, y=0, n_equipment=3,
+                    ),
+                ]
 
-            # ── Build IsoSections from event tree scenarios ──
-            scenarios_data = params.get("scenarios", [])
-            pop_grid = params.get("population_grid", [])
-
-            # Default ISO section for standalone QRA (natural gas at 50 bar)
-            iso_sections = [
-                IsoSection(
-                    name="Process Area",
-                    P=50e5,
-                    T=320.0,
-                    volume=10.0,
-                    composition="natural_gas",
-                    molecular_weight=18.0,
-                    fill_fraction=0.0,
-                    x=0, y=0,
-                    n_equipment=3,
-                ),
-            ]
-
-            # ── Build receptors from population grid ──
+            # ── 3. Build receptors & workers from population grid ──
             receptors = []
             workers = []
-            if pop_grid:
-                cell_size = 50.0  # default
+            if pop_grid and any(sum(row) > 0 for row in pop_grid):
+                cell_size = 50.0
                 n_rows = len(pop_grid)
                 for i, row in enumerate(pop_grid):
-                    n_cols = len(row)
                     for j, pop in enumerate(row):
                         if pop > 0:
                             x = j * cell_size
@@ -1488,12 +1505,12 @@ class MainWindow(QMainWindow):
                                 label=f"R{i},{j}", x=x, y=y,
                             ))
                             workers.append(WorkerGroup(
-                                name=f"Group {i},{j}",
+                                name=f"Grid {i},{j}",
                                 count=int(pop),
-                                locations=[(x, y, 0.5)],  # 50% occupancy
+                                locations=[(x, y, 0.5)],
                             ))
             else:
-                # Default receptors at various distances
+                # Default receptors at standard distances
                 for d in [20, 50, 100, 200, 500]:
                     receptors.append(ReceptorPoint(
                         label=f"R{d}m", x=d, y=0,
@@ -1505,7 +1522,7 @@ class MainWindow(QMainWindow):
                                locations=[(50, 0, 0.3)]),
                 ]
 
-            # ── Run end-to-end QRA pipeline ──
+            # ── 4. Run pipeline ──
             pipeline = QRAPipeline(
                 iso_sections=iso_sections,
                 receptor_grid=receptors,
@@ -1514,7 +1531,34 @@ class MainWindow(QMainWindow):
             )
             qra_result = pipeline.run()
 
-            # ── Build results data for display ──
+            # ── 5. Build LSIR contour grid from pipeline LSIR ──
+            # Convert dict-based lsir_grid into structured arrays for contour
+            ir_thresholds = {}
+            if qra_result.lsir_grid:
+                coords = list(qra_result.lsir_grid.keys())
+                xs = sorted(set(c[0] for c in coords))
+                ys = sorted(set(c[1] for c in coords))
+                import numpy as np
+                Z = np.full((len(ys), len(xs)), 1e-12)
+                for (x, y), v in qra_result.lsir_grid.items():
+                    xi = xs.index(x)
+                    yi = ys.index(y)
+                    Z[yi, xi] = max(v, 1e-12)
+                # Build IR thresholds from LSIR grid
+                from ..models.qra.individual_risk import RISK_THRESHOLDS
+                for label, thresh in RISK_THRESHOLDS.items():
+                    # Find minimum distance where LSIR > threshold
+                    min_d = None
+                    for d in [20, 50, 100, 200, 500]:
+                        vals = [v for (x, y), v in qra_result.lsir_grid.items()
+                                if abs((x**2 + y**2)**0.5 - d) < 30 and v > thresh]
+                        if vals:
+                            min_d = d
+                            break
+                    if min_d is not None:
+                        ir_thresholds[label] = min_d
+
+            # ── 6. Build results data ──
             results_data = {
                 "name": "QRA Analysis",
                 "pipeline_result": qra_result,
@@ -1522,30 +1566,24 @@ class MainWindow(QMainWindow):
                               for (x, y), v in qra_result.lsir_grid.items()},
                 "irpa_data": dict(qra_result.irpa_table),
                 "pll_total": qra_result.pll_total,
-                "pll_detail": {wg: qra_result.irpa_table.get(wg, 0) * 1
+                "pll_detail": {wg: qra_result.irpa_table.get(wg, 0)
                                for wg in qra_result.irpa_table},
                 "fn_data": {"n": [p[0] for p in qra_result.fn_pairs],
                             "f": [p[1] for p in qra_result.fn_pairs]} if qra_result.fn_pairs else None,
+                "ir_thresholds": ir_thresholds,
                 "dominant": qra_result.dominant,
-                "alarp": qra_result.alarp,
+                "alarp": dict(qra_result.alarp) if qra_result.alarp else {},
                 "scenario_count": qra_result.scenario_count,
                 "warnings": qra_result.warnings,
             }
 
-            # ── Also compute legacy IR grid for contour display ──
-            if qra_result.lsir_grid:
-                from ..models.qra.societal_risk import calculate_fn_curve
-                from ..models.qra.individual_risk import calculate_ir_grid
-                try:
-                    ir_result = calculate_ir_grid(
-                        scenarios=scenarios_data if scenarios_data else [],
-                        population=pop_grid if pop_grid else [],
-                        x_range=(0, 1000, 50),
-                        y_range=(-500, 500, 50),
-                    )
-                    results_data["ir_grid"] = ir_result
-                except Exception:
-                    pass
+            # Attach structured grid if we have enough points
+            if qra_result.lsir_grid and len(qra_result.lsir_grid) >= 4:
+                results_data["lsir_grid_structured"] = {
+                    "x_coords": xs,
+                    "y_coords": ys,
+                    "values": Z.tolist(),
+                }
 
             # Display results
             if hasattr(results_panel, 'set_result'):
@@ -1565,6 +1603,7 @@ class MainWindow(QMainWindow):
                 "pll_detail": {wg: qra_result.irpa_table.get(wg, 0)
                                for wg in qra_result.irpa_table},
                 "alarp": dict(qra_result.alarp) if qra_result.alarp else {},
+                "ir_thresholds": ir_thresholds,
                 "fn_data": {"n": [p[0] for p in qra_result.fn_pairs],
                             "f": [p[1] for p in qra_result.fn_pairs]} if qra_result.fn_pairs else None,
                 "dominant": qra_result.dominant,
