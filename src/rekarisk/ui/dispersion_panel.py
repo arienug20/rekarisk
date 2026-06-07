@@ -771,10 +771,46 @@ class AdvancedTab(QWidget):
         puff_group.setLayout(puff_form)
         layout.addWidget(puff_group)
 
+        # ── Building Wake (Huber-Snyder) ──
+        bldg_group = QGroupBox("🏢 Building Wake (Huber-Snyder)")
+        bldg_form = QFormLayout()
+
+        self.bldg_enabled = QCheckBox("Enable building wake effect")
+        self.bldg_enabled.setToolTip(
+            "When enabled, applies Huber-Snyder building wake factor\n"
+            "to enhance dispersion coefficients (σ_y, σ_z) within\n"
+            "~5 building heights downwind."
+        )
+        bldg_form.addRow("", self.bldg_enabled)
+
+        self.bldg_height = QDoubleSpinBox()
+        self.bldg_height.setRange(0.0, 500.0)
+        self.bldg_height.setValue(10.0)
+        self.bldg_height.setSuffix(" m")
+        self.bldg_height.setDecimals(1)
+        bldg_form.addRow("Building Height (H_b):", self.bldg_height)
+
+        self.bldg_width = QDoubleSpinBox()
+        self.bldg_width.setRange(0.0, 500.0)
+        self.bldg_width.setValue(20.0)
+        self.bldg_width.setSuffix(" m")
+        self.bldg_width.setDecimals(1)
+        bldg_form.addRow("Building Width (W_b):", self.bldg_width)
+
+        self.bldg_length = QDoubleSpinBox()
+        self.bldg_length.setRange(0.0, 500.0)
+        self.bldg_length.setValue(15.0)
+        self.bldg_length.setSuffix(" m")
+        self.bldg_length.setDecimals(1)
+        bldg_form.addRow("Building Length (L_b):", self.bldg_length)
+
+        bldg_group.setLayout(bldg_form)
+        layout.addWidget(bldg_group)
+
         layout.addStretch()
 
     def get_params(self) -> Dict[str, Any]:
-        return {
+        params = {
             "decay_rate": self.decay_rate_spin.value(),
             "deposition_velocity": self.deposition_spin.value(),
             "sampling_time": self.sampling_time_spin.value(),
@@ -783,3 +819,10 @@ class AdvancedTab(QWidget):
             "puff_time_steps": self.puff_steps_spin.value(),
             "num_puffs": self.num_puffs_spin.value(),
         }
+        if self.bldg_enabled.isChecked():
+            params["building"] = {
+                "height": self.bldg_height.value(),
+                "width": self.bldg_width.value(),
+                "length": self.bldg_length.value(),
+            }
+        return params

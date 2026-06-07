@@ -266,6 +266,25 @@ class JetFireTab(QWidget):
         env_group.setLayout(env_form)
         layout.addWidget(env_group)
 
+        # ── Radiation Model Selection ──
+        model_group = QGroupBox("🔥 Radiation Model")
+        model_form = QFormLayout()
+
+        self.jet_model_combo = QComboBox()
+        self.jet_model_combo.addItem("Multi-point source (default)", "multipoint")
+        self.jet_model_combo.addItem("Mudan tilted cylinder", "mudan")
+        self.jet_model_combo.addItem("Solid flame (multi-ring)", "solid_flame")
+        self.jet_model_combo.addItem("Point source (simple)", "point_source")
+        self.jet_model_combo.setToolTip(
+            "Multi-point: balanced accuracy\n"
+            "Mudan: best near-field accuracy for 37.5 kW/m²\n"
+            "Solid flame: detailed cylindrical model"
+        )
+        model_form.addRow("Model:", self.jet_model_combo)
+
+        model_group.setLayout(model_form)
+        layout.addWidget(model_group)
+
         layout.addStretch()
 
     def get_params(self) -> Dict[str, Any]:
@@ -285,6 +304,7 @@ class JetFireTab(QWidget):
             "ambient_temperature": self.jet_temp.value(),
             "relative_humidity": self.jet_humidity.value(),
             "discharge_density": rho if rho > 0 else None,
+            "jet_fire_model": self.jet_model_combo.currentData(),
         }
 
 

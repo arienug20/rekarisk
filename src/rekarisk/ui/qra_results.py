@@ -191,6 +191,53 @@ class IRContourTab(QWidget):
             )
             self._thresh_table.setItem(i, 1, dist_item)
 
+    def set_lsir_data(self, lsir: dict) -> None:
+        """Display LSIR data from pipeline as a table."""
+        if not lsir:
+            return
+        # Build a simple text summary
+        vals = sorted(lsir.values(), reverse=True)
+        max_ir = max(vals) if vals else 0
+        self._max_ir_label.setText(f"{max_ir:.4e} /yr")
+
+        # Find nearest receptor distances
+        for label_target, d_target in [("source", 0), ("100m", 100), ("500m", 500)]:
+            best_val = 0
+            for key, val in lsir.items():
+                # Parse location from key like "(x,y)"
+                try:
+                    import re
+                    nums = re.findall(r'-?[\d.]+', str(key))
+                    if len(nums) >= 1:
+                        d = abs(float(nums[0]))
+                        if abs(d - d_target) < 30:
+                            best_val = max(best_val, val)
+                except (ValueError, IndexError):
+                    pass
+            if label_target == "source":
+                self._ir_at_source_label.setText(f"{best_val:.4e} /yr")
+            elif label_target == "100m":
+                self._ir_100m_label.setText(f"{best_val:.4e} /yr")
+            elif label_target == "500m":
+                self._ir_500m_label.setText(f"{best_val:.4e} /yr")
+
+        # Threshold distances table from LSIR data
+        thresholds = [
+            ("1e-3 /yr", 1e-3),
+            ("1e-4 /yr", 1e-4),
+            ("1e-5 /yr", 1e-5),
+            ("1e-6 /yr", 1e-6),
+        ]
+        self._thresh_table.setRowCount(len(thresholds))
+        for i, (label, thresh) in enumerate(thresholds):
+            self._thresh_table.setItem(i, 0, QTableWidgetItem(label))
+            # Count locations exceeding threshold
+            n_exceed = sum(1 for v in vals if v >= thresh)
+            item = QTableWidgetItem(f"{n_exceed} locations")
+            item.setTextAlignment(
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            self._thresh_table.setItem(i, 1, item)
+
 
 # ── FN Curve Tab ──────────────────────────────────────────────────────
 
@@ -256,6 +303,43 @@ class FNCurveTab(QWidget):
         """Set FN data and criterion."""
         self._fn_data = fn_data
         self._criterion = criterion
+        self._refresh_plot()
+        self._refresh_summary()
+
+    def set_pipeline_fn(self, fn: dict) -> None:
+        """Set FN data from pipeline output dict.
+
+        Args:
+            fn: Dict with 'n' (list of fatalities) and 'f' (cumulative freq).
+        """
+        n_vals = fn.get("n", [])
+        f_vals = fn.get("f", [])
+        if not n_vals:
+            return
+
+        # Create FNData-compatible object for plotting
+        try:
+            self._fn_data = FNData(
+                n_values=np.array(n_vals, dtype=float),
+                f_values=np.array(f_vals, dtype=float),
+                potential_loss_of_life=0,
+                max_n=max(n_vals) if n_vals else 0,
+                total_frequency=sum(f_vals) if f_vals else 0,
+                expected_fatalities=0,
+                alarp_status={},
+            )
+        except Exception:
+            # Fallback: store raw data
+            self._fn_data = type("obj", (object,), {
+                "n_values": np.array(n_vals, dtype=float),
+                "f_values": np.array(f_vals, dtype=float),
+                "max_n": max(n_vals) if n_vals else 0,
+                "total_frequency": sum(f_vals) if f_vals else 0,
+                "expected_fatalities": 0,
+                "potential_loss_of_life": 0,
+                "alarp_status": {},
+            })()
+
         self._refresh_plot()
         self._refresh_summary()
 
@@ -430,6 +514,7 @@ class QRAResultsPanel(QWidget):
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
+        self._pipeline_data: Optional[dict] = None
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -455,6 +540,49 @@ class QRAResultsPanel(QWidget):
         self._tabs.addTab(self._summary_tab, "📋 Summary")
 
         layout.addWidget(self._tabs)
+
+    def set_pipeline_result(self, data: dict) -> None:
+        """Set results from end-to-end QRAPipeline output.
+
+        Args:
+            data: Dict with keys 'lsir_data', 'irpa_data', 'pll_total',
+                  'pll_detail', 'fn_data', 'dominant', 'alarp', etc.
+        """
+        self._pipeline_data = data
+
+        # Update summary tab with pipeline data
+        self._summary_tab.set_pipeline_summary(data)
+
+        # Update IR contour tab if LSIR data available
+        lsir = data.get("lsir_data", {})
+        if lsir and hasattr(self._ir_tab, 'set_lsir_data'):
+            self._ir_tab.set_lsir_data(lsir)
+
+        # Update FN curve tab if FN data available
+        fn = data.get("fn_data")
+        if fn and hasattr(self._fn_tab, 'set_pipeline_fn'):
+            self._fn_tab.set_pipeline_fn(fn)
+
+    def set_result(self, data) -> None:
+        """Generic set_result — auto-detects legacy or pipeline data format."""
+        if isinstance(data, dict):
+            if "pipeline_result" in data or "lsir_data" in data or "pll_total" in data:
+                # Pipeline format
+                self.set_pipeline_result(data)
+                return
+            # Legacy format
+            ir_result = data.get("ir_grid")
+            fn_data = data.get("fn_curve")
+            if ir_result and hasattr(self._ir_tab, 'set_result'):
+                self._ir_tab.set_result(ir_result)
+            if fn_data and hasattr(self._fn_tab, 'set_result'):
+                self._fn_tab.set_result(fn_data)
+        elif hasattr(data, 'n_values'):
+            # FNData object
+            self._fn_tab.set_result(data)
+        elif hasattr(data, 'ir_grid'):
+            # IndividualRiskResult object
+            self._ir_tab.set_result(data)
 
 
 # ── Summary Tab ───────────────────────────────────────────────────────
@@ -574,6 +702,98 @@ class QRASummaryTab(QWidget):
                 )
                 self._contrib_table.setItem(i, 4, pct_item)
 
+            self._contrib_table.resizeColumnsToContents()
+
+    def set_pipeline_summary(self, data: dict) -> None:
+        """Populate summary from end-to-end QRAPipeline results."""
+        lines = []
+        lines.append("=" * 60)
+        lines.append("QRA PIPELINE SUMMARY (End-to-End)")
+        lines.append("=" * 60)
+        lines.append("")
+
+        n_scenarios = data.get("scenario_count", 0)
+        lines.append(f"  Scenarios evaluated:  {n_scenarios}")
+        lines.append("")
+
+        # LSIR
+        lsir = data.get("lsir_data", {})
+        if lsir:
+            lines.append("── LOCATION-SPECIFIC INDIVIDUAL RISK (LSIR) ──")
+            for loc, val in sorted(lsir.items(), key=lambda x: -x[1])[:10]:
+                lines.append(f"  {loc:>20s}:  {val:.4e} /yr")
+            if len(lsir) > 10:
+                lines.append(f"  ... ({len(lsir)} total locations)")
+            lines.append("")
+
+        # IRPA
+        irpa = data.get("irpa_data", {})
+        if irpa:
+            lines.append("── INDIVIDUAL RISK PER ANNUM (IRPA) ──")
+            for wg, val in irpa.items():
+                lines.append(f"  {wg:>20s}:  {val:.4e} /yr")
+            lines.append("")
+
+        # PLL
+        pll_total = data.get("pll_total", 0.0)
+        lines.append("── POTENTIAL LOSS OF LIFE (PLL) ──")
+        lines.append(f"  Total PLL:            {pll_total:.6f} /yr")
+        lines.append("")
+
+        # ALARP
+        alarp = data.get("alarp", {})
+        if alarp:
+            lines.append("── ALARP ASSESSMENT (HSE UK Criteria) ──")
+            for wg, status in alarp.items():
+                irpa_val = irpa.get(wg, 0) if irpa else 0
+                emoji = "🚫" if "INTOLERABLE" in status else (
+                        "⚠️" if "ALARP" in status else "✅")
+                lines.append(f"  {emoji} {wg:>20s}:  {status}")
+            lines.append("")
+
+        # Dominant contributors
+        dominant = data.get("dominant", [])
+        if dominant:
+            lines.append("── DOMINANT RISK CONTRIBUTORS ──")
+            for d in dominant[:5]:
+                if isinstance(d, dict):
+                    lines.append(
+                        f"  • {d.get('scenario', '?'):40s}  "
+                        f"{d.get('frequency', 0):.4e} /yr"
+                    )
+            lines.append("")
+
+        # Warnings
+        warnings = data.get("warnings", [])
+        if warnings:
+            lines.append("── WARNINGS ──")
+            for w in warnings[:5]:
+                lines.append(f"  ⚠️ {w}")
+            lines.append("")
+
+        lines.append("=" * 60)
+        self._summary_text.setPlainText("\n".join(lines))
+
+        # Update contributions table from dominant scenarios
+        if dominant:
+            self._contrib_table.setRowCount(len(dominant))
+            for i, d in enumerate(dominant):
+                if isinstance(d, dict):
+                    self._contrib_table.setItem(i, 0,
+                        QTableWidgetItem(d.get("scenario", "?")))
+                    freq = d.get("frequency", 0)
+                    freq_item = QTableWidgetItem(f"{freq:.4e}")
+                    freq_item.setTextAlignment(
+                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                    self._contrib_table.setItem(i, 1, freq_item)
+                    self._contrib_table.setItem(i, 2,
+                        QTableWidgetItem(d.get("outcome", "?")))
+                    rl = risk_level_from_values(freq, 1)
+                    rl_item = QTableWidgetItem(rl.label)
+                    rl_item.setBackground(QColor(rl.hex_color))
+                    self._contrib_table.setItem(i, 3, rl_item)
+                    pct_item = QTableWidgetItem("—")
+                    self._contrib_table.setItem(i, 4, pct_item)
             self._contrib_table.resizeColumnsToContents()
 
     def _on_export(self) -> None:
