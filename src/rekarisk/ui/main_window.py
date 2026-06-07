@@ -1830,12 +1830,22 @@ class MainWindow(QMainWindow):
         # Default parameter distributions based on active panel
         params = self._extract_active_panel_distributions()
 
+        active = self._tab_widget.currentWidget()
+        panel = getattr(active, 'panel', active) if active else None
+
+        # Determine output keys based on panel type
+        if isinstance(panel, QRAPanel):
+            output_keys = ["pll_total"]
+        else:
+            output_keys = ["max_concentration"]
+
         dialog = MonteCarloDialog(
             model_function=model_fn,
             parameters=params if params else None,
-            output_keys=["max_concentration"],
+            output_keys=output_keys,
             parent=self,
         )
+
         dialog.exec()
 
     # ── Helper: build model function from active panel ────────────
@@ -1880,6 +1890,80 @@ class MainWindow(QMainWindow):
             def fn(params):
                 inp = TNTInput(**params)
                 return calculate_tnt_equivalency(inp)
+            return fn
+
+        elif isinstance(panel, QRAPanel):
+            from ..models.qra.qra_pipeline import (
+                QRAPipeline, IsoSection, ReceptorPoint, WorkerGroup,
+            )
+
+            def fn(params):
+                """QRA model function for Monte Carlo.
+
+                Accepts multiplier params (freq_mult, ign_mult, wind_mult,
+                occ_mult) and returns pipeline result.
+                """
+                freq_mult = params.get("freq_mult", 1.0)
+                ign_mult = params.get("ign_mult", 1.0)
+                wind_mult = params.get("wind_mult", 1.0)
+                occ_mult = params.get("occ_mult", 1.0)
+
+                import copy
+                iso_sections = [
+                    IsoSection(
+                        name="Process Area", P=50e5, T=320.0, volume=10.0,
+                        composition="natural_gas", molecular_weight=18.0,
+                        fill_fraction=0.0, x=0, y=0, n_equipment=3,
+                    ),
+                ]
+                receptors = [
+                    ReceptorPoint(label=f"R{d}m", x=d, y=0)
+                    for d in [20, 50, 100, 200, 500]
+                ]
+                workers = [
+                    WorkerGroup(name="Operator", count=3,
+                               locations=[(20, 0, 0.5 * occ_mult)]),
+                    WorkerGroup(name="Maintenance", count=2,
+                               locations=[(50, 0, 0.3 * occ_mult)]),
+                ]
+
+                leak_freq = {k: v * freq_mult for k, v in {
+                    "small": 2.4e-5, "medium": 4.0e-6,
+                    "large": 4.0e-7, "fullbore": 1.0e-7,
+                }.items()}
+                imm_ign = {k: v * ign_mult for k, v in {
+                    "small": 0.02, "medium": 0.03,
+                    "large": 0.05, "fullbore": 0.08,
+                }.items()}
+                del_ign = {k: v * ign_mult for k, v in {
+                    "small": 0.03, "medium": 0.04,
+                    "large": 0.06, "fullbore": 0.10,
+                }.items()}
+
+                pipeline = QRAPipeline(
+                    iso_sections=iso_sections,
+                    receptor_grid=receptors,
+                    worker_groups=workers,
+                    leak_freq_map=leak_freq,
+                    imm_ign_map=imm_ign,
+                    del_ign_map=del_ign,
+                )
+
+                if abs(wind_mult - 1.0) > 0.001:
+                    from ..models.qra.qra_pipeline import WeatherScenario
+                    pipeline.weathers = [
+                        WeatherScenario(
+                            name=w.name, wind_speed=w.wind_speed * wind_mult,
+                            stability_class=w.stability_class,
+                            ambient_temperature=w.ambient_temperature,
+                            relative_humidity=w.relative_humidity,
+                            direction=w.direction, probability=w.probability,
+                        )
+                        for w in pipeline.weathers
+                    ]
+
+                return pipeline.run()
+
             return fn
 
         return None
@@ -1943,6 +2027,14 @@ class MainWindow(QMainWindow):
         elif isinstance(panel, ExplosionPanel):
             return {
                 "mass_flammable": Uniform(500.0, 5000.0),
+            }
+        elif isinstance(panel, QRAPanel):
+            from ..analysis.monte_carlo import LogNormal
+            return {
+                "freq_mult": LogNormal(mu=0.0, sigma=0.47),  # CV≈50%
+                "ign_mult": LogNormal(mu=0.0, sigma=0.30),  # CV≈30%
+                "wind_mult": LogNormal(mu=0.0, sigma=0.20),  # CV≈20%
+                "occ_mult": LogNormal(mu=0.0, sigma=0.10),  # CV≈10%
             }
         return {}
 

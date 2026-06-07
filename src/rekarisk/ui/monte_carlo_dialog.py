@@ -97,6 +97,7 @@ class MonteCarloDialog(QDialog):
         model_function: Callable,
         parameters: Optional[Dict[str, Distribution]] = None,
         output_keys: Optional[List[str]] = None,
+        output_extractor: Optional[Callable] = None,
         parent: Optional[QWidget] = None,
     ):
         super().__init__(parent)
@@ -107,6 +108,7 @@ class MonteCarloDialog(QDialog):
         self.model_function = model_function
         self._input_params = parameters or {}
         self._output_keys = output_keys or []
+        self._output_extractor = output_extractor
 
         self._worker: Optional[_MCWorker] = None
         self.mc_result: Optional[MCResult] = None
@@ -425,6 +427,7 @@ class MonteCarloDialog(QDialog):
             parameters=dist_dict,
             model_function=self.model_function,
             output_keys=self._output_keys,
+            output_extractor=self._output_extractor,
             n_samples=n_samples,
             seed=seed,
             confidence_level=conf_level,
