@@ -454,12 +454,33 @@ def _fatal_prob(outcome: str, d: float, impact: Dict[float, float],
     d = max(d, 1.0)
 
     if outcome in ("jet_fire", "pool_fire"):
-        # Interpolate heat flux from threshold map
-        for th_kw in sorted(impact.keys(), reverse=True):
-            if d <= impact[th_kw]:
-                q_flux = th_kw * 1000.0  # kW→W/m²
-                _y, Pf = thermal_probit(q_flux, exp_t)
+        # Interpolate heat flux from threshold map.
+        # Thresholds are {kW/m²: distance_m}. Higher flux → shorter distance.
+        # We linearly interpolate between bracketing thresholds for accuracy.
+        sorted_thresholds = sorted(impact.keys(), reverse=True)
+        q_flux = 0.0
+        for i, th_kw in enumerate(sorted_thresholds):
+            d_th = impact[th_kw]
+            if d <= d_th:
+                # Receiver is within this threshold's reach.
+                # Check if there's a higher-flux threshold that DOESN'T reach d
+                if i > 0:
+                    # Interpolate between this and the next-higher threshold
+                    th_higher = sorted_thresholds[i - 1]
+                    d_higher = impact[th_higher]
+                    if d_higher < d and d_higher > 0:
+                        # Linear interp in 1/d² space (flux ~ 1/d² for point source)
+                        # q(d) between (th_kw at d_th) and (th_higher at d_higher)
+                        t = (d - d_higher) / max(d_th - d_higher, 1e-9)
+                        q_flux = (th_kw * t + th_higher * (1.0 - t)) * 1000.0
+                    else:
+                        q_flux = th_kw * 1000.0  # kW→W/m²
+                else:
+                    # Highest threshold — receiver gets at least this flux
+                    q_flux = th_kw * 1000.0  # kW→W/m²
                 break
+        if q_flux > 0:
+            _y, Pf = thermal_probit(q_flux, exp_t)
         else:
             Pf = 0.0
         if sheltered and Pf > 0:

@@ -20,8 +20,8 @@ def _mini_pipeline(P=50e5):
                       composition="methane", fill_fraction=0.0, x=0, y=0)]
     holes = [HoleSize("Large", 0.1)]
     wx = [WeatherScenario("D5", 5.0, "D")]
-    rec = [ReceptorPoint(x=0, y=30, label="Test")]
-    wrk = [WorkerGroup("Op", 1, [(0, 30, 0.5)])]
+    rec = [ReceptorPoint(x=0, y=65, label="Test")]
+    wrk = [WorkerGroup("Op", 1, [(0, 65, 0.5)])]
     return QRAPipeline(iso_sections=iso, hole_sizes=holes,
                        weather_scenarios=wx, receptor_grid=rec,
                        worker_groups=wrk)
