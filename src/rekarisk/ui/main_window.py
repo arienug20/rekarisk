@@ -1259,7 +1259,8 @@ class MainWindow(QMainWindow):
                     relative_humidity=params.get("relative_humidity", 0.5),
                     discharge_density=params.get("discharge_density"),
                 )
-                result = calculate_jet_fire(inp)
+                jet_model = params.get("jet_fire_model", "multipoint")
+                result = calculate_jet_fire(inp, model=jet_model)
                 results_panel.display_jet_fire_result(result)
 
             elif model_type == "bleve":
@@ -1553,15 +1554,22 @@ class MainWindow(QMainWindow):
                 results_panel.panel().set_result(results_data)
 
             self._project_data.setdefault("results", []).append({
+                "name": "QRA Analysis",
+                "type": "qra",
                 "module": "qra",
                 "inputs": params,
-                "pipeline_result": {
-                    "scenario_count": qra_result.scenario_count,
-                    "pll_total": qra_result.pll_total,
-                    "irpa_table": dict(qra_result.irpa_table),
-                    "alarp": dict(qra_result.alarp),
-                    "dominant": qra_result.dominant,
-                },
+                "lsir_data": {f"({x},{y})": v
+                              for (x, y), v in qra_result.lsir_grid.items()},
+                "irpa_data": dict(qra_result.irpa_table),
+                "pll_total": qra_result.pll_total,
+                "pll_detail": {wg: qra_result.irpa_table.get(wg, 0)
+                               for wg in qra_result.irpa_table},
+                "alarp": dict(qra_result.alarp) if qra_result.alarp else {},
+                "fn_data": {"n": [p[0] for p in qra_result.fn_pairs],
+                            "f": [p[1] for p in qra_result.fn_pairs]} if qra_result.fn_pairs else None,
+                "dominant": qra_result.dominant,
+                "scenario_count": qra_result.scenario_count,
+                "warnings": qra_result.warnings,
                 "timestamp": datetime.now().isoformat(),
             })
 
@@ -1690,6 +1698,10 @@ class MainWindow(QMainWindow):
                     "table_headers": scenario.get("table_headers", []),
                     "table_rows": scenario.get("table_rows", []),
                 })
+        # Ensure QRA results have 'type' key for PDF generator
+        for r in results:
+            if r.get("module") == "qra" and "type" not in r:
+                r["type"] = "qra"
         dialog = ReportDialog(self._project_data, results, self)
         dialog.exec()
 

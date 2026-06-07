@@ -20,7 +20,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTabWidget, QPushButton,
     QLabel, QComboBox, QTableWidget, QTableWidgetItem, QGroupBox,
     QFormLayout, QTextEdit, QFileDialog, QMessageBox, QSplitter,
-    QHeaderView, QFrame,
+    QHeaderView, QFrame, QDoubleSpinBox, QSpinBox,
 )
 
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
@@ -573,8 +573,12 @@ class QRAResultsPanel(QWidget):
             # Legacy format
             ir_result = data.get("ir_grid")
             fn_data = data.get("fn_curve")
-            if ir_result and hasattr(self._ir_tab, 'set_result'):
+            if ir_result and hasattr(ir_result, 'x_coords'):
                 self._ir_tab.set_result(ir_result)
+            elif ir_result and isinstance(ir_result, dict):
+                # dict IR grid — cannot contour, but can show thresholds
+                if hasattr(self._ir_tab, 'set_lsir_data'):
+                    self._ir_tab.set_lsir_data(ir_result)
             if fn_data and hasattr(self._fn_tab, 'set_result'):
                 self._fn_tab.set_result(fn_data)
         elif hasattr(data, 'n_values'):
