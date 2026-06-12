@@ -251,6 +251,7 @@ def plot_blowdown_summary(
     *,
     Z: Optional[np.ndarray] = None,
     k: Optional[np.ndarray] = None,
+    T_wall: Optional[np.ndarray] = None,
     vessel_name: str = "",
     orifice_mm: float = 0.0,
     save_path: Optional[str] = None,
@@ -286,37 +287,44 @@ def plot_blowdown_summary(
         title_str += f" ({orifice_mm} mm orifice)"
     fig.suptitle(title_str, fontsize=14, fontweight="bold")
 
-    t_min = t / 60
+    t_sec = t  # time in seconds
+    t_plot = t_sec  # plot in seconds
+    t_label = "Time [s]"
 
     # (1) Pressure
     ax = axes[0]
-    ax.plot(t_min, P / PSI2PA, color="#e74c3c", linewidth=2)
-    ax.fill_between(t_min, P / PSI2PA, alpha=0.12, color="#e74c3c")
-    ax.set_ylabel("P [psia]"); ax.set_xlabel("Time [min]")
+    ax.plot(t_plot, P / PSI2PA, color="#e74c3c", linewidth=2)
+    ax.fill_between(t_plot, P / PSI2PA, alpha=0.12, color="#e74c3c")
+    ax.set_ylabel("P [psia]"); ax.set_xlabel(t_label)
     ax.set_title("Pressure")
 
     # (2) Temperature
     ax = axes[1]
     T_f = K2F(T)
-    ax.plot(t_min, T_f, color="#2980b9", linewidth=2)
-    ax.fill_between(t_min, T_f, alpha=0.12, color="#2980b9")
-    ax.set_ylabel("T [°F]"); ax.set_xlabel("Time [min]")
+    ax.plot(t_plot, T_f, color="#2980b9", linewidth=2, label="Gas")
+    ax.fill_between(t_plot, T_f, alpha=0.12, color="#2980b9")
+    if T_wall is not None:
+        Tw_f = K2F(T_wall)
+        ax.plot(t_plot, Tw_f, color="#e67e22", linewidth=2, linestyle="--", label="Wall")
+        ax.fill_between(t_plot, Tw_f, alpha=0.08, color="#e67e22")
+        ax.legend(fontsize=7)
+    ax.set_ylabel("T [°F]"); ax.set_xlabel(t_label)
     ax.set_title("Temperature")
 
     # (3) Mass
     ax = axes[2]
     m_lb = m * 2.20462
-    ax.plot(t_min, m_lb, color="#27ae60", linewidth=2)
-    ax.fill_between(t_min, m_lb, alpha=0.12, color="#27ae60")
-    ax.set_ylabel("m [lb]"); ax.set_xlabel("Time [min]")
+    ax.plot(t_plot, m_lb, color="#27ae60", linewidth=2)
+    ax.fill_between(t_plot, m_lb, alpha=0.12, color="#27ae60")
+    ax.set_ylabel("m [lb]"); ax.set_xlabel(t_label)
     ax.set_title("Mass Remaining")
 
     # (4) Mass flow rate
     ax = axes[3]
     mdot_lb_hr = mdot * 3600 * 2.20462
-    ax.plot(t_min, mdot_lb_hr, color="#8e44ad", linewidth=2)
-    ax.fill_between(t_min, mdot_lb_hr, alpha=0.12, color="#8e44ad")
-    ax.set_ylabel("ṁ [lb/hr]"); ax.set_xlabel("Time [min]")
+    ax.plot(t_plot, mdot_lb_hr, color="#8e44ad", linewidth=2)
+    ax.fill_between(t_plot, mdot_lb_hr, alpha=0.12, color="#8e44ad")
+    ax.set_ylabel("ṁ [lb/hr]"); ax.set_xlabel(t_label)
     ax.set_title("Mass Flow Rate")
 
     # (5) Phase envelope (P-T diagram)
@@ -332,11 +340,11 @@ def plot_blowdown_summary(
     ax = axes[5]
     if has_diag:
         ax2 = ax.twinx()
-        l1 = ax.plot(t_min, Z, color="#2c3e50", linewidth=2, label="Z")
-        l2 = ax2.plot(t_min, k, color="#f39c12", linewidth=2, label="k")
+        l1 = ax.plot(t_plot, Z, color="#2c3e50", linewidth=2, label="Z")
+        l2 = ax2.plot(t_plot, k, color="#f39c12", linewidth=2, label="k")
         ax.set_ylabel("Z [-]", color="#2c3e50")
         ax2.set_ylabel("k (Cp/Cv) [-]", color="#f39c12")
-        ax.set_xlabel("Time [min]")
+        ax.set_xlabel(t_label)
         ax.set_title("Dynamic Z & k")
         ax.tick_params(axis="y", labelcolor="#2c3e50")
         ax2.tick_params(axis="y", labelcolor="#f39c12")
@@ -351,13 +359,15 @@ def plot_blowdown_summary(
         T_drop_F = K2F(T[0]) - K2F(T[-1])
         stats_text = (
             f"Summary:\n"
-            f"  Blowdown: {dt_blow:.1f} min\n"
+            f"  Blowdown: {dt_blow*60:.0f} s\n"
             f"  Δm: {dm:.1f} lb\n"
-            f"  ΔT: {T_drop_F:.0f} °F ({T_drop:.0f} K)\n"
-            f"  ṁ_avg: {np.mean(mdot)*3600*2.20462:.0f} lb/hr\n"
+            f"  ΔT_gas: {T_drop_F:.0f} °F\n"
             f"  ṁ_max: {np.max(mdot)*3600*2.20462:.0f} lb/hr\n"
             f"  P_f: {P[-1]/PSI2PA:.0f} psia"
         )
+        if T_wall is not None:
+            Tw_f = K2F(T_wall)
+            stats_text += f"\n  T_gas_min: {np.min(T_f):.0f}°F\n  T_wall_min: {np.min(Tw_f):.0f}°F"
         ax.text(0.5, 0.5, stats_text, transform=ax.transAxes,
                 fontsize=10, fontfamily="monospace",
                 verticalalignment="center", horizontalalignment="center",

@@ -96,11 +96,6 @@ class VesselInput:
     mode: str = "rigorous"  # 'rigorous' or 'api521'
     n_time_steps: int = 100
 
-    # Wall thermal inertia
-    wall_mass: float = 0.0            # Vessel wall mass [kg]. If > 0, enables wall inertia model.
-    wall_cp: float = 500.0           # Wall specific heat capacity [J/(kg·K)] (default: carbon steel).
-    U_wall_gas: float = 0.0          # Wall-to-gas HTC [W/(m²·K)]. If > 0, overrides U_htc for wall→gas path.
-
     # Dynamic EOS (CoolProp Peng-Robinson)
     mole_fractions: dict[str, float] | None = None
     dynamic_props: bool = False
@@ -138,7 +133,6 @@ class VesselResult:
     messages: list = field(default_factory=list)
     Z: np.ndarray | None = None
     k: np.ndarray | None = None
-    T_wall: np.ndarray | None = None   # Wall temperature array [K] (wall inertia model).
 
     def plot(
         self,
@@ -172,7 +166,6 @@ class VesselResult:
             mdot=self.mdot,
             Z=Z_arr,
             k=k_arr,
-            T_wall=self.T_wall,
             vessel_name=vessel_name,
             orifice_mm=orifice_mm,
             save_path=save_path,
@@ -205,8 +198,6 @@ class VesselResult:
             m_conv = lambda kg: kg * 2.2046226
             mdot_conv = lambda kgs: kgs * 3600 * 2.2046226
             headers = ["time_min", "P_psia", "T_F", "m_lb", "mdot_lb_hr"]
-            if self.T_wall is not None:
-                headers += ["T_wall_F"]
             if self.Z is not None:
                 headers += ["Z", "k"]
         else:
@@ -215,8 +206,6 @@ class VesselResult:
             m_conv = lambda kg: kg
             mdot_conv = lambda kgs: kgs
             headers = ["time_s", "P_Pa", "T_K", "m_kg", "mdot_kg_s"]
-            if self.T_wall is not None:
-                headers += ["T_wall_K"]
             if self.Z is not None:
                 headers += ["Z", "k"]
 
@@ -240,8 +229,6 @@ class VesselResult:
                 f"{m_conv(self.m[i]):.4f}",
                 f"{mdot_conv(self.mdot[i]):.4f}",
             ]
-            if self.T_wall is not None:
-                row.append(f"{T_conv(self.T_wall[i]):.4f}")
             if self.Z is not None:
                 row.append(f"{self.Z[i]:.6f}")
                 row.append(f"{self.k[i]:.6f}")
@@ -578,96 +565,8 @@ def _gas_blowdown_ode(t: float, y: np.ndarray, params: dict) -> np.ndarray:
     return np.array([dm_dt, dU_dt])
 
 
-def _gas_blowdown_ode_with_wall(t: float, y: np.ndarray, params: dict) -> np.ndarray:
-    """ODE right-hand side for gas blowdown WITH wall thermal inertia.
-
-    State vector y = [m, U, U_wall] where:
-        m = mass of gas in vessel [kg]
-        U = total internal energy of gas [J]
-        U_wall = total internal energy of vessel wall [J]
-
-    ODEs:
-        dm/dt = -mdot
-        dU/dt = -mdot * h_out + Q_wall_to_gas
-        dU_wall/dt = Q_amb_to_wall - Q_wall_to_gas
-
-    Heat transfer paths:
-        ambient/fire → wall (U_htc × A × (T_amb - T_wall))
-        wall → gas (U_wall_gas × A × (T_wall - T_gas))
-    """
-    m, U, U_wall = y
-    V = params["V"]
-    k = params["k"]
-    MW = params["MW"]
-    cv = params["cv"]
-    Z_c = params.get("Z", 1.0)
-    A_hole = params["A_hole"]
-    Cd = params["Cd"]
-    A_wall = params["A_wall"]
-    U_htc = params["U_htc"]      # ambient/fire → wall
-    U_wg = params["U_wall_gas"]  # wall → gas
-    T_amb = params["T_amb"]
-    P_down = params["P_down"]
-    wall_cp = params["wall_cp"]
-    wall_mass = params["wall_mass"]
-
-    if m <= EPSILON or V <= EPSILON:
-        return np.array([0.0, 0.0, 0.0])
-
-    # Current gas state
-    T_gas = U / (m * cv) if m > EPSILON and cv > EPSILON else params["T_initial"]
-    P = _gas_pressure(V, m, T_gas, MW, Z_c)
-
-    # Current wall temperature
-    T_wall = U_wall / (wall_mass * wall_cp) if wall_mass > EPSILON and wall_cp > EPSILON else T_amb
-
-    if P <= P_down + EPSILON:
-        # No flow, but still heat transfer
-        Q_wg = U_wg * A_wall * (T_wall - T_gas) if U_wg > EPSILON else 0.0
-        Q_aw = U_htc * A_wall * (T_amb - T_wall) if U_htc > EPSILON else 0.0
-        return np.array([0.0, Q_wg, Q_aw - Q_wg])
-
-    # Mass flow rate
-    r_crit = (2.0 / (k + 1.0)) ** (k / (k - 1.0))
-    P_choked = P * r_crit
-    is_choked = P_down < P_choked
-
-    if is_choked:
-        G_flux = _gas_choked_mass_flux(P, T_gas, k, MW, Z_c)
-    else:
-        pr = P_down / P
-        ratio_term = pr ** (2.0 / k) - pr ** ((k + 1.0) / k)
-        if ratio_term <= EPSILON or pr <= EPSILON:
-            return np.array([0.0, 0.0, 0.0])
-        factor = (2.0 * k / (k - 1.0)) * (MW / (Z_c * R * T_gas))
-        G_flux = P * math.sqrt(factor * ratio_term)
-
-    mdot = Cd * A_hole * G_flux
-
-    # Enthalpy of exiting gas
-    cp_val = cv * k
-    h_out = cp_val * T_gas
-
-    # Heat transfer: wall → gas
-    Q_wg = U_wg * A_wall * (T_wall - T_gas) if U_wg > EPSILON else 0.0
-
-    # Heat transfer: ambient/fire → wall
-    Q_aw = U_htc * A_wall * (T_amb - T_wall) if U_htc > EPSILON else 0.0
-
-    # Derivatives
-    dm_dt = -mdot
-    dU_dt = -mdot * h_out + Q_wg        # gas loses mass+energy, gains heat from wall
-    dU_wall_dt = Q_aw - Q_wg            # wall gains from ambient, loses to gas
-
-    return np.array([dm_dt, dU_dt, dU_wall_dt])
-
-
 def _solve_gas_blowdown(inputs: VesselInput) -> dict:
     """Solve gas blowdown using ODE integration.
-
-    Supports optional wall thermal inertia model when wall_mass > 0.
-    Without wall inertia: 2-state ODE [m, U]
-    With wall inertia: 3-state ODE [m, U, U_wall]
 
     Args:
         inputs: VesselInput dataclass.
@@ -682,8 +581,8 @@ def _solve_gas_blowdown(inputs: VesselInput) -> dict:
     except Exception:
         raise
 
-    # Compute cv
-    R_specific = R / inputs.molecular_weight
+    # Compute cv from k and real-gas correction
+    R_specific = inputs.Z * R / inputs.molecular_weight
     cv_val = inputs.cv if inputs.cv is not None else R_specific / (inputs.cp_cv_ratio - 1.0)
 
     # Initial conditions
@@ -693,12 +592,7 @@ def _solve_gas_blowdown(inputs: VesselInput) -> dict:
     A_hole = _orifice_area(inputs.orifice_d)
     P_target = inputs.P_target if inputs.P_target is not None else P_ATM
 
-    # Detect wall inertia mode
-    use_wall = inputs.wall_mass > 0.0 and inputs.A_wall > 0.0
-    # U_wall_gas: use explicit value if provided, else fall back to U_htc
-    U_wg = inputs.U_wall_gas if inputs.U_wall_gas > 0 else inputs.U_htc
-
-    # Common params
+    # Parameters for ODE
     params = {
         "V": inputs.V,
         "k": inputs.cp_cv_ratio,
@@ -714,177 +608,71 @@ def _solve_gas_blowdown(inputs: VesselInput) -> dict:
         "T_initial": inputs.T_initial,
     }
 
-    if use_wall:
-        # ---- Wall inertia mode (3-state) ----
-        params["U_wall_gas"] = U_wg
-        params["wall_cp"] = inputs.wall_cp
-        params["wall_mass"] = inputs.wall_mass
+    # Pressure threshold event
+    def pressure_reached(t, y):
+        m, U = y
+        if m <= EPSILON:
+            return 0.0
+        T = U / (m * cv_val)
+        P = _gas_pressure(inputs.V, m, T, inputs.molecular_weight)
+        return P - P_target
 
-        U_wall0 = inputs.wall_mass * inputs.wall_cp * inputs.T_initial
-        y0 = np.array([m0, U0, U_wall0])
-        ode_func = _gas_blowdown_ode_with_wall
+    pressure_reached.terminal = True
+    pressure_reached.direction = -1  # trigger when crossing zero from above
 
-        def pressure_reached(t, y, *args):
-            m, U, U_w = y
-            if m <= 1e-15:
-                return 0.0
-            T = U / (m * cv_val)
-            P = _gas_pressure(inputs.V, m, T, inputs.molecular_weight, inputs.Z)
-            return P - P_target
+    # Solve ODE
+    sol = solve_ivp(
+        _gas_blowdown_ode,
+        t_span=(0.0, inputs.t_max),
+        y0=np.array([m0, U0]),
+        args=(params,),
+        method="RK45",
+        events=pressure_reached,
+        max_step=inputs.t_max / inputs.n_time_steps,
+        rtol=1e-6,
+        atol=1e-9,
+    )
 
-        def wall_mass_event(t, y):
-            """Prevent wall from going below absolute zero."""
-            return y[2] - 1.0  # U_wall > 0
-        wall_mass_event.terminal = False
+    # Extract results at uniform time points
+    t_eval = np.linspace(0, sol.t[-1], inputs.n_time_steps)
+    # Interpolate solution onto uniform grid
+    m_interp = np.interp(t_eval, sol.t, sol.y[0])
+    U_interp = np.interp(t_eval, sol.t, sol.y[1])
 
-        pressure_reached.terminal = True
-        pressure_reached.direction = -1
+    # Compute derived quantities
+    T_arr = np.where(m_interp > EPSILON,
+                     U_interp / (m_interp * cv_val),
+                     inputs.T_ambient)
+    P_arr = np.array([_gas_pressure(inputs.V, m, T_in, inputs.molecular_weight)
+                       for m, T_in in zip(m_interp, T_arr)])
+    mdot_arr = np.zeros_like(t_eval)
+    for i in range(len(t_eval)):
+        if P_arr[i] <= P_target + EPSILON or m_interp[i] <= EPSILON:
+            mdot_arr[i] = 0.0
+            continue
+        if P_arr[i] > EPSILON and T_arr[i] > EPSILON:
+            mdot_arr[i] = inputs.Cd * A_hole * _gas_choked_mass_flux(
+                P_arr[i], T_arr[i], inputs.cp_cv_ratio, inputs.molecular_weight
+            )
 
-        sol = solve_ivp(
-            ode_func,
-            t_span=(0.0, inputs.t_max),
-            y0=y0,
-            args=(params,),
-            method="RK45",
-            events=pressure_reached,
-            max_step=inputs.t_max / inputs.n_time_steps,
-            rtol=1e-6,
-            atol=1e-9,
-        )
+    total_released = m0 - m_interp[-1]
+    events_dict = {}
+    if sol.t_events and len(sol.t_events) > 0 and len(sol.t_events[0]) > 0:
+        events_dict["pressure_reached_at"] = float(sol.t_events[0][0])
 
-        # Interpolate onto uniform grid
-        t_eval = np.linspace(0, sol.t[-1], inputs.n_time_steps)
-        m_interp = np.interp(t_eval, sol.t, sol.y[0])
-        U_interp = np.interp(t_eval, sol.t, sol.y[1])
-        U_wall_interp = np.interp(t_eval, sol.t, sol.y[2])
-
-        # Derived quantities
-        T_arr = np.where(m_interp > EPSILON,
-                         U_interp / (m_interp * cv_val),
-                         inputs.T_ambient)
-        P_arr = np.array([_gas_pressure(inputs.V, m, T_in, inputs.molecular_weight, inputs.Z)
-                           for m, T_in in zip(m_interp, T_arr)])
-        T_wall_arr = np.where(inputs.wall_mass > EPSILON,
-                               U_wall_interp / (inputs.wall_mass * inputs.wall_cp),
-                               inputs.T_ambient)
-
-        # mdot
-        mdot_arr = np.zeros_like(t_eval)
-        P_down_val = max(P_target, P_ATM)
-        for i in range(len(t_eval)):
-            if P_arr[i] <= P_target + EPSILON or m_interp[i] <= EPSILON:
-                mdot_arr[i] = 0.0
-                continue
-            if P_arr[i] > EPSILON and T_arr[i] > EPSILON:
-                k_val = inputs.cp_cv_ratio
-                r_crit = (2.0 / (k_val + 1.0)) ** (k_val / (k_val - 1.0))
-                P_choked = P_arr[i] * r_crit
-                if P_down_val < P_choked:
-                    mdot_arr[i] = inputs.Cd * A_hole * _gas_choked_mass_flux(
-                        P_arr[i], T_arr[i], inputs.cp_cv_ratio, inputs.molecular_weight, inputs.Z
-                    )
-                else:
-                    pr = P_down_val / P_arr[i]
-                    ratio_term = pr ** (2.0 / k_val) - pr ** ((k_val + 1.0) / k_val)
-                    if ratio_term > EPSILON:
-                        factor = (2.0 * k_val / (k_val - 1.0)) * (inputs.molecular_weight / (inputs.Z * R * T_arr[i]))
-                        G_flux = P_arr[i] * math.sqrt(factor * ratio_term)
-                        mdot_arr[i] = inputs.Cd * A_hole * G_flux
-
-        total_released = m0 - m_interp[-1]
-        events_dict = {}
-        if sol.t_events and len(sol.t_events) > 0 and len(sol.t_events[0]) > 0:
-            events_dict["pressure_reached_at"] = float(sol.t_events[0][0])
-
-        return {
-            "t": t_eval,
-            "P": P_arr,
-            "T": T_arr,
-            "m": m_interp,
-            "mdot": mdot_arr,
-            "m_remaining": m_interp,
-            "total_mass_released": float(total_released),
-            "t_final": float(t_eval[-1]),
-            "events": events_dict,
-            "phase_quality": None,
-            "messages": ["wall_inertia_enabled"],
-            "T_wall": T_wall_arr,
-        }
-
-    else:
-        # ---- Standard mode (2-state, no wall inertia) ----
-        def pressure_reached(t, y, *args):
-            m, U = y
-            if m <= 1e-15:
-                return 0.0
-            T = U / (m * cv_val)
-            P = _gas_pressure(inputs.V, m, T, inputs.molecular_weight, inputs.Z)
-            return P - P_target
-
-        pressure_reached.terminal = True
-        pressure_reached.direction = -1
-
-        sol = solve_ivp(
-            _gas_blowdown_ode,
-            t_span=(0.0, inputs.t_max),
-            y0=np.array([m0, U0]),
-            args=(params,),
-            method="RK45",
-            events=pressure_reached,
-            max_step=inputs.t_max / inputs.n_time_steps,
-            rtol=1e-6,
-            atol=1e-9,
-        )
-
-        t_eval = np.linspace(0, sol.t[-1], inputs.n_time_steps)
-        m_interp = np.interp(t_eval, sol.t, sol.y[0])
-        U_interp = np.interp(t_eval, sol.t, sol.y[1])
-
-        T_arr = np.where(m_interp > EPSILON,
-                         U_interp / (m_interp * cv_val),
-                         inputs.T_ambient)
-        P_arr = np.array([_gas_pressure(inputs.V, m, T_in, inputs.molecular_weight, inputs.Z)
-                           for m, T_in in zip(m_interp, T_arr)])
-        mdot_arr = np.zeros_like(t_eval)
-        P_down_val = max(P_target, P_ATM)
-        for i in range(len(t_eval)):
-            if P_arr[i] <= P_target + EPSILON or m_interp[i] <= EPSILON:
-                mdot_arr[i] = 0.0
-                continue
-            if P_arr[i] > EPSILON and T_arr[i] > EPSILON:
-                k_val = inputs.cp_cv_ratio
-                r_crit = (2.0 / (k_val + 1.0)) ** (k_val / (k_val - 1.0))
-                P_choked = P_arr[i] * r_crit
-                if P_down_val < P_choked:
-                    mdot_arr[i] = inputs.Cd * A_hole * _gas_choked_mass_flux(
-                        P_arr[i], T_arr[i], inputs.cp_cv_ratio, inputs.molecular_weight, inputs.Z
-                    )
-                else:
-                    pr = P_down_val / P_arr[i]
-                    ratio_term = pr ** (2.0 / k_val) - pr ** ((k_val + 1.0) / k_val)
-                    if ratio_term > EPSILON:
-                        factor = (2.0 * k_val / (k_val - 1.0)) * (inputs.molecular_weight / (inputs.Z * R * T_arr[i]))
-                        G_flux = P_arr[i] * math.sqrt(factor * ratio_term)
-                        mdot_arr[i] = inputs.Cd * A_hole * G_flux
-
-        total_released = m0 - m_interp[-1]
-        events_dict = {}
-        if sol.t_events and len(sol.t_events) > 0 and len(sol.t_events[0]) > 0:
-            events_dict["pressure_reached_at"] = float(sol.t_events[0][0])
-
-        return {
-            "t": t_eval,
-            "P": P_arr,
-            "T": T_arr,
-            "m": m_interp,
-            "mdot": mdot_arr,
-            "m_remaining": m_interp,
-            "total_mass_released": float(total_released),
-            "t_final": float(t_eval[-1]),
-            "events": events_dict,
-            "phase_quality": None,
-            "messages": [],
-        }
+    return {
+        "t": t_eval,
+        "P": P_arr,
+        "T": T_arr,
+        "m": m_interp,
+        "mdot": mdot_arr,
+        "m_remaining": m_interp,
+        "total_mass_released": float(total_released),
+        "t_final": float(t_eval[-1]),
+        "events": events_dict,
+        "phase_quality": None,
+        "messages": [],
+    }
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1337,7 +1125,6 @@ def calculate_vessel_blowdown(inputs: VesselInput) -> VesselResult:
         messages=data.get("messages", []),
         Z=data.get("Z"),
         k=data.get("k"),
-        T_wall=data.get("T_wall"),
     )
 
 
