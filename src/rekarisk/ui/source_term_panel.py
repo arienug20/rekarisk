@@ -9,13 +9,14 @@ Uses PyQt6 for the UI framework.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Dict
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTabWidget,
     QLabel, QLineEdit, QComboBox, QDoubleSpinBox,
     QPushButton, QFormLayout, QGroupBox, QCheckBox,
-    QSplitter, QFrame, QTextEdit, QScrollArea,
+    QSplitter, QFrame, QTextEdit, QScrollArea, QSpinBox,
+    QDialog, QTableWidget, QTableWidgetItem, QHeaderView,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 
@@ -399,10 +400,12 @@ class PipeTab(QWidget):
         g2 = QGroupBox("Rupture / Flow")
         f2 = QFormLayout()
         self.rupture_combo = QComboBox()
-        self.rupture_combo.addItems(["full_bore", "hole_in_pipe", "long_pipeline"])
+        self.rupture_combo.addItems(["full_bore", "hole_in_pipe", "long_pipeline", "pipeline_blowdown"])
+        self.rupture_combo.currentTextChanged.connect(self._on_rupture_type_changed)
         f2.addRow("Type:", self.rupture_combo)
         self.fluid_combo = QComboBox()
-        self.fluid_combo.addItems(["gas", "liquid", "two_phase"])
+        self.fluid_combo.addItems(["gas", "liquid", "two_phase", "flashing_flow"])
+        self.fluid_combo.currentTextChanged.connect(self._on_fluid_type_changed)
         f2.addRow("Fluid:", self.fluid_combo)
         self.P_up_pipe = self._spin(1e3, 1e9, 2e6, 0, "Pa")
         f2.addRow("P upstream:", self.P_up_pipe)
@@ -427,8 +430,30 @@ class PipeTab(QWidget):
         f3.addRow("Mol. Weight:", self.mw_pipe)
         self.k_pipe = self._spin(1.01, 2.0, 1.4, 3, "")
         f3.addRow("Cp/Cv:", self.k_pipe)
+        self.dynamic_eos_check = QCheckBox("Dynamic EOS (CoolProp)")
+        self.dynamic_eos_check.setChecked(False)
+        f3.addRow("", self.dynamic_eos_check)
+        self.mole_frac_btn = QPushButton("Edit Composition...")
+        self.mole_frac_btn.clicked.connect(self._edit_mole_fractions)
+        self.mole_frac_btn.setEnabled(False)
+        f3.addRow("", self.mole_frac_btn)
         g3.setLayout(f3)
         sl.addWidget(g3)
+
+        # Advanced options for pipeline_blowdown
+        self.g4_advanced = QGroupBox("Advanced (Pipeline Blowdown)")
+        self.g4_advanced.setVisible(False)
+        f4 = QFormLayout()
+        self.n_segments_spin = QSpinBox()
+        self.n_segments_spin.setRange(1, 100)
+        self.n_segments_spin.setValue(10)
+        f4.addRow("Segments:", self.n_segments_spin)
+        self.wall_thickness_spin = self._spin(0.001, 0.1, 0.01, 3, "m")
+        f4.addRow("Wall thickness:", self.wall_thickness_spin)
+        self.wall_htc_spin = self._spin(0.0, 1000.0, 0.0, 1, "W/m²/K")
+        f4.addRow("Wall HTC:", self.wall_htc_spin)
+        self.g4_advanced.setLayout(f4)
+        sl.addWidget(self.g4_advanced)
 
         btn = QPushButton("Calculate Pipe Flow")
         btn.clicked.connect(lambda: self.calculate_clicked.emit(self.get_params()))
@@ -441,6 +466,9 @@ class PipeTab(QWidget):
         scroll.setWidget(w)
         layout.addWidget(scroll)
 
+        # Initialize state
+        self._mole_fractions = {}  # Dict[str, float]
+
     def _spin(self, vmin, vmax, default, decimals, suffix=""):
         spin = QDoubleSpinBox()
         spin.setRange(vmin, vmax)
@@ -449,6 +477,22 @@ class PipeTab(QWidget):
         if suffix:
             spin.setSuffix(f" {suffix}")
         return spin
+
+    def _on_rupture_type_changed(self, value):
+        """Handle rupture type change."""
+        is_blowdown = value == "pipeline_blowdown"
+        self.g4_advanced.setVisible(is_blowdown)
+
+    def _on_fluid_type_changed(self, value):
+        """Handle fluid type change."""
+        is_dynamic = value in ("gas", "flashing_flow")
+        self.mole_frac_btn.setEnabled(is_dynamic and self.dynamic_eos_check.isChecked())
+
+    def _edit_mole_fractions(self):
+        """Open dialog to edit mole fractions."""
+        dialog = MoleFractionDialog(self._mole_fractions, self)
+        if dialog.exec():
+            self._mole_fractions = dialog.get_fractions()
 
     def get_params(self) -> dict:
         return {
@@ -466,6 +510,12 @@ class PipeTab(QWidget):
             "cp_cv_ratio": self.k_pipe.value(),
             "d_hole": self.d_hole_pipe.value(),
             "Cd": self.cd_pipe.value(),
+            "dynamic_props": self.dynamic_eos_check.isChecked(),
+            "mole_fractions": self._mole_fractions.copy() if self._mole_fractions else None,
+            # Pipeline blowdown specific
+            "n_segments": self.n_segments_spin.value(),
+            "wall_thickness": self.wall_thickness_spin.value(),
+            "wall_htc": self.wall_htc_spin.value(),
         }
 
     def set_substance(self, substance) -> None:
@@ -717,3 +767,82 @@ class PoolTab(QWidget):
         bp = getattr(substance, 'normal_boiling_point', None)
         if bp is not None:
             self.tboil_pool.setValue(bp)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Mole Fraction Dialog (for CoolProp)
+# ══════════════════════════════════════════════════════════════════════════════
+
+class MoleFractionDialog(QDialog):
+    """Dialog for editing mole fractions for CoolProp mixtures."""
+
+    def __init__(self, fractions: Dict[str, float], parent=None):
+        super().__init__(parent)
+        self.fractions = fractions.copy() if fractions else {}
+        self._setup_ui()
+
+    def _setup_ui(self):
+        self.setWindowTitle("Edit Mole Fractions")
+        self.setModal(True)
+        layout = QVBoxLayout(self)
+
+        # Table
+        self.table = QTableWidget()
+        self.table.setColumnCount(2)
+        self.table.setHorizontalHeaderLabels(["Component", "Mole Fraction"])
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.table.setRowCount(10)
+        layout.addWidget(self.table)
+
+        # Add row button
+        btn_add = QPushButton("Add Component")
+        btn_add.clicked.connect(self._add_row)
+        layout.addWidget(btn_add)
+
+        # OK/Cancel buttons
+        btn_box = QHBoxLayout()
+        btn_ok = QPushButton("OK")
+        btn_ok.clicked.connect(self.accept)
+        btn_cancel = QPushButton("Cancel")
+        btn_cancel.clicked.connect(self.reject)
+        btn_box.addWidget(btn_ok)
+        btn_box.addWidget(btn_cancel)
+        layout.addLayout(btn_box)
+
+        # Populate existing fractions
+        row = 0
+        for comp, frac in sorted(self.fractions.items()):
+            if row >= self.table.rowCount():
+                self.table.insertRow(row)
+            self.table.setItem(row, 0, QTableWidgetItem(comp))
+            spin = QDoubleSpinBox()
+            spin.setRange(0.0, 1.0)
+            spin.setDecimals(4)
+            spin.setValue(frac)
+            self.table.setCellWidget(row, 1, spin)
+            row += 1
+
+    def _add_row(self):
+        row = self.table.rowCount()
+        self.table.insertRow(row)
+        self.table.setItem(row, 0, QTableWidgetItem(""))
+        spin = QDoubleSpinBox()
+        spin.setRange(0.0, 1.0)
+        spin.setDecimals(4)
+        spin.setValue(0.1)
+        self.table.setCellWidget(row, 1, spin)
+
+    def get_fractions(self) -> Dict[str, float]:
+        """Extract fractions from table."""
+        fractions = {}
+        for row in range(self.table.rowCount()):
+            comp_item = self.table.item(row, 0)
+            if comp_item is None or not comp_item.text().strip():
+                continue
+            comp = comp_item.text().strip()
+            spin = self.table.cellWidget(row, 1)
+            if spin is not None:
+                frac = spin.value()
+                if frac > 0:
+                    fractions[comp] = frac
+        return fractions

@@ -7,13 +7,13 @@ Supports all source term result types (Orifice, Vessel, Pipe, PSV, Pool).
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTabWidget,
     QLabel, QTableWidget, QTableWidgetItem, QHeaderView,
     QPushButton, QGroupBox, QSplitter, QScrollArea,
-    QTextBrowser,
+    QTextBrowser, QComboBox,
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
 from PyQt6.QtGui import QFont, QColor
