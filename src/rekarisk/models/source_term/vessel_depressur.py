@@ -542,6 +542,17 @@ def _gas_blowdown_ode(t: float, y: np.ndarray, params: dict) -> np.ndarray:
     T = U / (m * cv) if m > EPSILON and cv > EPSILON else params["T_initial"]
     P = _gas_pressure(V, m, T, MW, Z_c)
 
+    # Dynamic EOS: update Z and k from CoolProp if enabled
+    if params.get("use_dynamic_eos") and params.get("mole_fractions"):
+        T_clamped = max(T, 150.0)
+        Z_dyn, k_dyn, _ = _dynamic_eos_properties(
+            params["mole_fractions"], P, T_clamped,
+            fallback_k=k, fallback_Z=Z_c)
+        if 0.1 < Z_dyn < 5.0 and 1.001 < k_dyn < 3.0:
+            Z_c = Z_dyn
+            k = k_dyn
+            P = _gas_pressure(V, m, T, MW, Z_c)
+
     if P <= P_down + EPSILON:
         return np.array([0.0, 0.0])
 
@@ -617,6 +628,18 @@ def _gas_blowdown_ode_with_wall(t: float, y: np.ndarray, params: dict) -> np.nda
     # Current gas state
     T_gas = U / (m * cv) if m > EPSILON and cv > EPSILON else params["T_initial"]
     P = _gas_pressure(V, m, T_gas, MW, Z_c)
+
+    # Dynamic EOS: update Z and k from CoolProp if enabled
+    if params.get("use_dynamic_eos") and params.get("mole_fractions"):
+        T_gas_clamped = max(T_gas, 150.0)  # avoid EOS crash below ~150K
+        Z_dyn, k_dyn, _ = _dynamic_eos_properties(
+            params["mole_fractions"], P, T_gas_clamped,
+            fallback_k=k, fallback_Z=Z_c)
+        if 0.1 < Z_dyn < 5.0 and 1.001 < k_dyn < 3.0:
+            Z_c = Z_dyn
+            k = k_dyn
+            # Recalculate P with updated Z
+            P = _gas_pressure(V, m, T_gas, MW, Z_c)
 
     # Current wall temperature
     T_wall = U_wall / (wall_mass * wall_cp) if wall_mass > EPSILON and wall_cp > EPSILON else T_amb
@@ -712,6 +735,8 @@ def _solve_gas_blowdown(inputs: VesselInput) -> dict:
         "T_amb": inputs.T_ambient,
         "P_down": max(P_target, P_ATM),
         "T_initial": inputs.T_initial,
+        "use_dynamic_eos": inputs.dynamic_props and inputs.mole_fractions is not None,
+        "mole_fractions": inputs.mole_fractions,
     }
 
     if use_wall:
@@ -762,13 +787,19 @@ def _solve_gas_blowdown(inputs: VesselInput) -> dict:
         T_arr = np.where(m_interp > EPSILON,
                          U_interp / (m_interp * cv_val),
                          inputs.T_ambient)
+
+        # Dynamic EOS tracking
+        use_dyn = inputs.dynamic_props and inputs.mole_fractions is not None
+        Z_track = np.full_like(t_eval, inputs.Z)
+        k_track = np.full_like(t_eval, inputs.cp_cv_ratio)
+
         P_arr = np.array([_gas_pressure(inputs.V, m, T_in, inputs.molecular_weight, inputs.Z)
                            for m, T_in in zip(m_interp, T_arr)])
         T_wall_arr = np.where(inputs.wall_mass > EPSILON,
                                U_wall_interp / (inputs.wall_mass * inputs.wall_cp),
                                inputs.T_ambient)
 
-        # mdot
+        # mdot + dynamic Z/k
         mdot_arr = np.zeros_like(t_eval)
         P_down_val = max(P_target, P_ATM)
         for i in range(len(t_eval)):
@@ -777,17 +808,29 @@ def _solve_gas_blowdown(inputs: VesselInput) -> dict:
                 continue
             if P_arr[i] > EPSILON and T_arr[i] > EPSILON:
                 k_val = inputs.cp_cv_ratio
+                Z_val = inputs.Z
+                if use_dyn:
+                    T_clamped = max(T_arr[i], 150.0)
+                    Z_dyn, k_dyn, _ = _dynamic_eos_properties(
+                        inputs.mole_fractions, P_arr[i], T_clamped,
+                        fallback_k=k_val, fallback_Z=Z_val)
+                    if 0.1 < Z_dyn < 5.0 and 1.001 < k_dyn < 3.0:
+                        Z_val = Z_dyn
+                        k_val = k_dyn
+                        P_arr[i] = _gas_pressure(inputs.V, m_interp[i], T_arr[i], inputs.molecular_weight, Z_val)
+                    Z_track[i] = Z_val
+                    k_track[i] = k_val
                 r_crit = (2.0 / (k_val + 1.0)) ** (k_val / (k_val - 1.0))
                 P_choked = P_arr[i] * r_crit
                 if P_down_val < P_choked:
                     mdot_arr[i] = inputs.Cd * A_hole * _gas_choked_mass_flux(
-                        P_arr[i], T_arr[i], inputs.cp_cv_ratio, inputs.molecular_weight, inputs.Z
+                        P_arr[i], T_arr[i], k_val, inputs.molecular_weight, Z_val
                     )
                 else:
                     pr = P_down_val / P_arr[i]
                     ratio_term = pr ** (2.0 / k_val) - pr ** ((k_val + 1.0) / k_val)
                     if ratio_term > EPSILON:
-                        factor = (2.0 * k_val / (k_val - 1.0)) * (inputs.molecular_weight / (inputs.Z * R * T_arr[i]))
+                        factor = (2.0 * k_val / (k_val - 1.0)) * (inputs.molecular_weight / (Z_val * R * T_arr[i]))
                         G_flux = P_arr[i] * math.sqrt(factor * ratio_term)
                         mdot_arr[i] = inputs.Cd * A_hole * G_flux
 
@@ -807,8 +850,10 @@ def _solve_gas_blowdown(inputs: VesselInput) -> dict:
             "t_final": float(t_eval[-1]),
             "events": events_dict,
             "phase_quality": None,
-            "messages": ["wall_inertia_enabled"],
+            "messages": ["wall_inertia_enabled"] + (["dynamic_eos: CoolProp HEOS"] if use_dyn else []),
             "T_wall": T_wall_arr,
+            "Z": Z_track if use_dyn else None,
+            "k": k_track if use_dyn else None,
         }
 
     else:
@@ -843,6 +888,12 @@ def _solve_gas_blowdown(inputs: VesselInput) -> dict:
         T_arr = np.where(m_interp > EPSILON,
                          U_interp / (m_interp * cv_val),
                          inputs.T_ambient)
+
+        # Dynamic EOS tracking
+        use_dyn = inputs.dynamic_props and inputs.mole_fractions is not None
+        Z_track = np.full_like(t_eval, inputs.Z)
+        k_track = np.full_like(t_eval, inputs.cp_cv_ratio)
+
         P_arr = np.array([_gas_pressure(inputs.V, m, T_in, inputs.molecular_weight, inputs.Z)
                            for m, T_in in zip(m_interp, T_arr)])
         mdot_arr = np.zeros_like(t_eval)
@@ -853,17 +904,29 @@ def _solve_gas_blowdown(inputs: VesselInput) -> dict:
                 continue
             if P_arr[i] > EPSILON and T_arr[i] > EPSILON:
                 k_val = inputs.cp_cv_ratio
+                Z_val = inputs.Z
+                if use_dyn:
+                    T_clamped = max(T_arr[i], 150.0)
+                    Z_dyn, k_dyn, _ = _dynamic_eos_properties(
+                        inputs.mole_fractions, P_arr[i], T_clamped,
+                        fallback_k=k_val, fallback_Z=Z_val)
+                    if 0.1 < Z_dyn < 5.0 and 1.001 < k_dyn < 3.0:
+                        Z_val = Z_dyn
+                        k_val = k_dyn
+                        P_arr[i] = _gas_pressure(inputs.V, m_interp[i], T_arr[i], inputs.molecular_weight, Z_val)
+                    Z_track[i] = Z_val
+                    k_track[i] = k_val
                 r_crit = (2.0 / (k_val + 1.0)) ** (k_val / (k_val - 1.0))
                 P_choked = P_arr[i] * r_crit
                 if P_down_val < P_choked:
                     mdot_arr[i] = inputs.Cd * A_hole * _gas_choked_mass_flux(
-                        P_arr[i], T_arr[i], inputs.cp_cv_ratio, inputs.molecular_weight, inputs.Z
+                        P_arr[i], T_arr[i], k_val, inputs.molecular_weight, Z_val
                     )
                 else:
                     pr = P_down_val / P_arr[i]
                     ratio_term = pr ** (2.0 / k_val) - pr ** ((k_val + 1.0) / k_val)
                     if ratio_term > EPSILON:
-                        factor = (2.0 * k_val / (k_val - 1.0)) * (inputs.molecular_weight / (inputs.Z * R * T_arr[i]))
+                        factor = (2.0 * k_val / (k_val - 1.0)) * (inputs.molecular_weight / (Z_val * R * T_arr[i]))
                         G_flux = P_arr[i] * math.sqrt(factor * ratio_term)
                         mdot_arr[i] = inputs.Cd * A_hole * G_flux
 
@@ -883,7 +946,9 @@ def _solve_gas_blowdown(inputs: VesselInput) -> dict:
             "t_final": float(t_eval[-1]),
             "events": events_dict,
             "phase_quality": None,
-            "messages": [],
+            "messages": ["dynamic_eos: CoolProp HEOS"] if use_dyn else [],
+            "Z": Z_track if use_dyn else None,
+            "k": k_track if use_dyn else None,
         }
 
 
